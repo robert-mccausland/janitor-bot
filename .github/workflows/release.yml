@@ -17,7 +17,7 @@ permissions:
 env:
   PROJECT_ID: robs-lab
   PROJECT_NUMBER: 502765884137
-  SERVICE_ACCOUNT: janitor-bot-delpoyments@robs-lab.iam.gserviceaccount.com
+  SERVICE_ACCOUNT: janitor-bot-deployments@robs-lab.iam.gserviceaccount.com
   GCE_ZONE: us-east1-c
   GCE_INSTANCE_NAME: container-host-1
   REGISTRY: ghcr.io
