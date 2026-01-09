@@ -1,0 +1,35 @@
+name: Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+      
+
+jobs:
+  check:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        python-version: '1.25'
+        cache: true
+          
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Run linters
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.6
+    
+    - name: Run build
+      run: go build -v ./...

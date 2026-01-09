@@ -1,0 +1,9 @@
+# See the dedicated "version" documentation section.
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
