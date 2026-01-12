@@ -12,22 +12,17 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 func NewLogger(name string) *slog.Logger {
-	var handler slog.Handler
 	if os.Getenv("DEBUG") == "TRUE" {
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}).WithAttrs([]slog.Attr{slog.Any("name", name)})
+		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}).WithAttrs([]slog.Attr{slog.Any("name", name)}))
 	} else {
-		handler = otelslog.NewHandler(name, otelslog.WithAttributes(
-			semconv.ServiceName("janitor-bot"),
-			semconv.ServiceVersion(os.Getenv("VERSION")),
-			attribute.String("environment", os.Getenv("ENVIRONMENT")),
-		))
-	}
 
-	return slog.New(handler)
+		return otelslog.NewLogger(name)
+	}
 }
 
 func SetupOTel(ctx context.Context) (func(context.Context) error, error) {
@@ -56,7 +51,24 @@ func newLoggerProvider(ctx context.Context) (*log.LoggerProvider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to create grpc log exporter: %v", err)
 	}
+
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("janitor-bot"),
+			semconv.ServiceVersion(os.Getenv("VERSION")),
+			attribute.String("environment", os.Getenv("ENVIRONMENT")),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create otel resource object: %v", err)
+	}
+
+	fmt.Printf("%v", res)
+
 	loggerProvider := log.NewLoggerProvider(
+		log.WithResource(res),
 		log.WithProcessor(log.NewBatchProcessor(stdoutExporter)),
 		log.WithProcessor(log.NewBatchProcessor(grpcExporter)),
 	)
