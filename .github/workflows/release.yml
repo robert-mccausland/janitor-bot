@@ -80,8 +80,10 @@ jobs:
       - name: Update docker-compose manifest
         run: |
           version=${{ fromJson(needs.build.outputs.metaJson).labels['org.opencontainers.image.version'] }}
-
-          echo "VERSION=$version" > ./deploy/.env
+          environment=${{ vars.ENVIRONMENT_NAME }}
+          
+          echo "VERSION=$version" > ./deploy/.env          
+          echo "ENVIRONMENT=$environment" > ./deploy/.env
           echo "TOKEN=${{ secrets.DISCORD_TOKEN }}" >> ./deploy/.env
 
           gcloud compute ssh apps@${{ env.GCE_INSTANCE_NAME }} \

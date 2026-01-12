@@ -5,8 +5,17 @@ services:
     image: ghcr.io/robert-mccausland/janitor-bot:${VERSION}
     restart: unless-stopped 
     environment:
+      ENVIRONMENT: ${ENVIRONMENT}
       TOKEN: ${TOKEN}
       OFFICE_CHANNEL_ID: "1443583282443845834"
       DEFAULT_CHANNEL_ID: "1291056400289632369"
       TIMEZONE: "Europe/London"
+      OTEL_EXPORTER_OTLP_ENDPOINT: grafana-alloy:4317
+      
+    networks:
+     - shared-network
 
+networks:
+  shared-network:
+    external: true
+    name: shared-network

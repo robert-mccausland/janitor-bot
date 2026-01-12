@@ -13,7 +13,6 @@ type SoundboardSoundSend struct {
 
 func SendSoundboardSound(s *discordgo.Session, channelID string, data SoundboardSoundSend, options ...discordgo.RequestOption) error {
 	endpoint := discordgo.EndpointChannel(channelID) + "/send-soundboard-sound"
-	res, err := s.RequestWithBucketID("POST", endpoint, data, endpoint, options...)
-	println(res)
+	_, err := s.RequestWithBucketID("POST", endpoint, data, endpoint, options...)
 	return err
 }
