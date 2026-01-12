@@ -21,11 +21,13 @@ env:
   GCE_ZONE: us-east1-c
   GCE_INSTANCE_NAME: container-host-1
   REGISTRY: ghcr.io
+  ENVIRONMENT: Production
 
 jobs:
   build:
     runs-on: ubuntu-latest
     outputs: 
+      environment: ${{ env.ENVIRONMENT }}
       metaJson: ${{ steps.meta.outputs.json }}
     steps:
       - name: Checkout Repository
@@ -61,11 +63,11 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    environment:
-      name: Production
-
-    needs: build
+    needs: 
+       - build
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ needs.build.outputs.environment }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -80,7 +82,7 @@ jobs:
       - name: Update docker-compose manifest
         run: |
           version=${{ fromJson(needs.build.outputs.metaJson).labels['org.opencontainers.image.version'] }}
-          environment=${{ job.deploy.environment }}
+          environment=${{ needs.build.outputs.environment }}
 
           echo "VERSION=$version" > ./deploy/.env          
           echo "ENVIRONMENT=$environment" >> ./deploy/.env
