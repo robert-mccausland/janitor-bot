@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  wordle-tracker:
+  janitor-bot:
     image: ghcr.io/robert-mccausland/janitor-bot:${VERSION}
     restart: unless-stopped 
     environment:
@@ -10,8 +10,9 @@ services:
       OFFICE_CHANNEL_ID: "1443583282443845834"
       DEFAULT_CHANNEL_ID: "1291056400289632369"
       TIMEZONE: "Europe/London"
-      OTEL_EXPORTER_OTLP_ENDPOINT: grafana-alloy:4317
-      
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://grafana-alloy:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+
     networks:
      - shared-network
 
