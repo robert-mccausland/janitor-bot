@@ -72,6 +72,9 @@ func openOffice(s *discordgo.Session, office *discordgo.Channel) error {
 }
 
 func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel *discordgo.Channel) error {
+
+	// Its important to give the janitor spesific permissions to join the channel, as tje janitor will be unable to grant it
+	// again if it doesn't have the permission and removing the join permission from the everyone group will do this.
 	err := s.ChannelPermissionSet(office.ID, s.State.User.ID, discordgo.PermissionOverwriteTypeMember, discordgo.PermissionVoiceConnect, 0)
 	if err != nil {
 		return fmt.Errorf("failed to add janitor exception permission to office: %v", err)
@@ -99,6 +102,9 @@ func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel
 
 	}
 
+	// VC connection is not always properly established so wait a little bit
+	time.Sleep(200 * time.Millisecond)
+
 	defer func() {
 		err = vc.Disconnect()
 		if err != nil {
@@ -122,6 +128,9 @@ func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel
 	if err != nil {
 		return fmt.Errorf("failed to switch channels: %v", err)
 	}
+
+	// VC connection is not always properly established so wait a little bit
+	time.Sleep(200 * time.Millisecond)
 
 	err = playSound(s, office, SoundConfig{SoundID: "1449829431693672641", Duration: 1 * time.Second})
 	if err != nil {
