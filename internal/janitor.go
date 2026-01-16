@@ -35,7 +35,7 @@ func Janate(s *discordgo.Session) error {
 
 	cron := cron.New(cron.WithLocation(timezone))
 
-	_, err = cron.AddFunc("00 17 * * *", func() {
+	_, err = cron.AddFunc("00 17 * * 1-5", func() {
 		logger.Info("Closing the office")
 		err := closeOffice(s, office, defaultChannel)
 		if err != nil {
@@ -46,7 +46,7 @@ func Janate(s *discordgo.Session) error {
 		return err
 	}
 
-	_, err = cron.AddFunc("00 09 * * *", func() {
+	_, err = cron.AddFunc("00 09 * * 1-5", func() {
 		logger.Info("Opening the office")
 		err := openOffice(s, office)
 		if err != nil {
