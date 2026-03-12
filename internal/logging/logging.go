@@ -1,4 +1,4 @@
-package internal
+package logging
 
 import (
 	"context"
@@ -17,19 +17,10 @@ import (
 )
 
 func NewLogger(name string) *slog.Logger {
-	if os.Getenv("DEBUG") == "TRUE" {
-		return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}).WithAttrs([]slog.Attr{slog.Any("name", name)}))
-	} else {
-
-		return otelslog.NewLogger(name)
-	}
+	return otelslog.NewLogger(name)
 }
 
-func SetupOTel(ctx context.Context) (func(context.Context) error, error) {
-	if os.Getenv("DEBUG") == "TRUE" {
-		return func(context.Context) error { return nil }, nil
-	}
-
+func SetupLogging(ctx context.Context) (func(context.Context) error, error) {
 	loggerProvider, err := newLoggerProvider(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to setup OTel logging: %v", err)
@@ -40,7 +31,33 @@ func SetupOTel(ctx context.Context) (func(context.Context) error, error) {
 	return loggerProvider.Shutdown, nil
 }
 
+type debugExporter struct{}
+
+func (e *debugExporter) Export(ctx context.Context, records []log.Record) error {
+	for _, r := range records {
+		timestamp := r.Timestamp().Format("2006-01-02 15:04:05")
+		level := r.SeverityText()
+		message := r.Body()
+		fmt.Printf("[%s] %s: %s\n", timestamp, level, message)
+	}
+
+	return nil
+}
+
+func (e *debugExporter) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+func (e *debugExporter) ForceFlush(ctx context.Context) error {
+	return nil
+}
+
 func newLoggerProvider(ctx context.Context) (*log.LoggerProvider, error) {
+	if os.Getenv("DEBUG") == "TRUE" {
+		return log.NewLoggerProvider(
+			log.WithProcessor(log.NewSimpleProcessor(&debugExporter{})),
+		), nil
+	}
 
 	stdoutExporter, err := stdoutlog.New()
 	if err != nil {

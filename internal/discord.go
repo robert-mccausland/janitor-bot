@@ -1,44 +1,33 @@
 package internal
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/robert-mccausland/janitor-bot/internal/discord"
 )
 
-func SetupDiscordClient() (*discordgo.Session, error) {
+func SetupDiscordClient(ctx context.Context) (*discord.Client, error) {
 	token := os.Getenv("TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("TOKEN environment variable must be set")
 	}
 
-	s, err := discordgo.New("Bot " + token)
+	client := discord.NewDiscordClient(discord.DefaultOptions())
+
+	go func() {
+		err := client.Run(ctx, token, int(discord.IntentGuilds|discord.IntentGuildVoiceStates))
+		if err != nil && err != context.Canceled {
+			logger.Error(fmt.Sprintf("Error while running discord client: %v", err), slog.Any("error", err))
+		}
+	}()
+
+	err := client.WaitForReady()
 	if err != nil {
-		return nil, fmt.Errorf("error creating Discord session: %v", err)
+		return nil, fmt.Errorf("error starting discord client: %w", err)
 	}
 
-	ready := make(chan bool)
-	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
-		ready <- true
-	})
-
-	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildVoiceStates
-	err = s.Open()
-	if err != nil {
-		return nil, fmt.Errorf("error opening connection: %v", err)
-	}
-
-	<-ready
-
-	return s, nil
-}
-
-func ShutdownDiscordClient(s *discordgo.Session) error {
-	err := s.Close()
-	if err != nil {
-		return fmt.Errorf("error while closing discord connection: %v", err)
-	}
-
-	return nil
+	return client, nil
 }

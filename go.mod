@@ -3,7 +3,6 @@ module github.com/robert-mccausland/janitor-bot
 go 1.25.4
 
 require (
-	github.com/bwmarrin/discordgo v0.29.0
 	github.com/joho/godotenv v1.5.1
 	github.com/robfig/cron/v3 v3.0.1
 	go.opentelemetry.io/contrib/bridges/otelslog v0.14.0
@@ -35,5 +34,3 @@ require (
 	google.golang.org/grpc v1.77.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
-
-replace github.com/bwmarrin/discordgo => github.com/bwmarrin/discordgo v0.0.0-20251229154532-54ae40de5723

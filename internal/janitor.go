@@ -1,28 +1,33 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/robert-mccausland/janitor-bot/internal/discord"
+	"github.com/robert-mccausland/janitor-bot/internal/logging"
 	"github.com/robfig/cron/v3"
 )
 
-var (
-	logger = NewLogger("github.com/robert-mccausland/janitor-bot/internal/discord")
-)
+var logger *slog.Logger
 
-func Janate(s *discordgo.Session) error {
+func init() {
+	logger = logging.NewLogger("github.com/robert-mccausland/janitor-bot/internal")
+}
+
+func Janate(c *discord.Client, ctx context.Context) error {
 	officeChannelId := os.Getenv("OFFICE_CHANNEL_ID")
-	office, err := s.Channel(officeChannelId)
+	office, err := c.GetChannel(officeChannelId)
 	if err != nil {
 		return fmt.Errorf("failed to get office channel, %v", slog.Any("err", err))
 	}
 
 	defaultChannelId := os.Getenv("DEFAULT_CHANNEL_ID")
-	defaultChannel, err := s.Channel(defaultChannelId)
+	defaultChannel, err := c.GetChannel(defaultChannelId)
 	if err != nil {
 		return fmt.Errorf("failed to get default channel, %v", slog.Any("err", err))
 	}
@@ -37,7 +42,7 @@ func Janate(s *discordgo.Session) error {
 
 	_, err = cron.AddFunc("00 17 * * 1-5", func() {
 		logger.Info("Closing the office")
-		err := closeOffice(s, office, defaultChannel)
+		err := closeOffice(c, office, defaultChannel)
 		if err != nil {
 			logger.Error("error while closing the office: %v", slog.Any("err", err))
 		}
@@ -48,7 +53,7 @@ func Janate(s *discordgo.Session) error {
 
 	_, err = cron.AddFunc("00 09 * * 1-5", func() {
 		logger.Info("Opening the office")
-		err := openOffice(s, office)
+		err := openOffice(c, office)
 		if err != nil {
 			logger.Error("error while opening the office: %v", slog.Any("err", err))
 		}
@@ -57,37 +62,100 @@ func Janate(s *discordgo.Session) error {
 		return err
 	}
 
+	go func() {
+		for {
+			timeout := time.Hour * (time.Duration(rand.Float64()*6) + 3)
+			select {
+			case <-time.After(timeout):
+			case <-ctx.Done():
+				return
+			}
+
+			channel := office
+			if rand.Intn(2) == 0 {
+				channel = defaultChannel
+			}
+			err := sweepChannel(c, channel)
+			if err != nil {
+				logger.Error(fmt.Sprintf("error while sweeping channel: %v", err), slog.Any("err", err))
+			}
+		}
+	}()
+
 	cron.Start()
 
 	return nil
 }
 
-func openOffice(s *discordgo.Session, office *discordgo.Channel) error {
-	err := s.ChannelPermissionDelete(office.ID, office.GuildID)
+func sweepChannel(c *discord.Client, channel *discord.Channel) error {
+	logger.Info("Sweeping channel", slog.String("channel_id", channel.ID))
+
+	vc, err := c.JoinVoiceChannel(channel.GuildID, channel.ID, false, false)
 	if err != nil {
-		return fmt.Errorf("failed to edit permisions to open office: %v", err)
+		return fmt.Errorf("failed to join voice channel: %v", err)
+	}
+	defer func() {
+		err = vc.Leave()
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to disconnect from voice: %v", err), slog.Any("error", err))
+		}
+	}()
+
+	<-time.After(time.Second * 2)
+	if rand.Intn(6) == 0 {
+		logger.Info("Kachigga")
+		err = playSound(c, channel, SoundConfig{SoundID: "1452798245351854332"})
+		if err != nil {
+			return fmt.Errorf("failed to play sweep sound: %w", err)
+		}
+	}
+	<-time.After(time.Second * time.Duration(rand.Intn(25)+3))
+	return nil
+}
+
+func openOffice(c *discord.Client, office *discord.Channel) error {
+	logger.Info("Opening office", slog.String("channel_id", office.ID))
+	err := c.DeleteChannelPermissions(office.ID, office.GuildID)
+	if err != nil {
+		return fmt.Errorf("failed to edit permisions to open office: %w", err)
 	}
 
 	return nil
 }
 
-func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel *discordgo.Channel) error {
+func closeOffice(c *discord.Client, office *discord.Channel, defaultChannel *discord.Channel) error {
+	logger.Info("Closing office", slog.String("channel_id", office.ID), slog.String("default_channel_id", defaultChannel.ID))
 
 	// Its important to give the janitor spesific permissions to join the channel, as tje janitor will be unable to grant it
 	// again if it doesn't have the permission and removing the join permission from the everyone group will do this.
-	err := s.ChannelPermissionSet(office.ID, s.State.User.ID, discordgo.PermissionOverwriteTypeMember, discordgo.PermissionVoiceConnect, 0)
+	err := c.EditChannelPermissions(office.ID, discord.PermissionOverwrite{
+		ID:    c.User().ID,
+		Type:  discord.PermissionOverwriteTypeMember,
+		Allow: discord.PermissionConnect,
+		Deny:  discord.PermissionNone,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to add janitor exception permission to office: %v", err)
 	}
-	err = s.ChannelPermissionSet(office.ID, office.GuildID, discordgo.PermissionOverwriteTypeRole, 0, discordgo.PermissionVoiceConnect)
+
+	err = c.EditChannelPermissions(office.ID, discord.PermissionOverwrite{
+		ID:    office.GuildID,
+		Type:  discord.PermissionOverwriteTypeRole,
+		Allow: discord.PermissionNone,
+		Deny:  discord.PermissionConnect,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to remove connect permissions to office: %v", err)
 	}
 
-	guild, err := s.State.Guild(office.GuildID)
-	var inOffice []*discordgo.VoiceState
+	guild := c.Guild(office.GuildID)
+	if guild == nil {
+		return fmt.Errorf("office guild not found: %s", office.GuildID)
+	}
+
+	var inOffice []discord.VoiceState
 	for _, vs := range guild.VoiceStates {
-		if vs.ChannelID == office.ID {
+		if vs.ChannelID != nil && *vs.ChannelID == office.ID {
 			inOffice = append(inOffice, vs)
 		}
 	}
@@ -96,29 +164,28 @@ func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel
 		return nil
 	}
 
-	vc, err := s.ChannelVoiceJoin(office.GuildID, office.ID, false, false)
+	logger.Info("Moving people out of the office office", slog.String("channel_id", office.ID), slog.String("default_channel_id", defaultChannel.ID))
+	vc, err := c.JoinVoiceChannel(office.GuildID, office.ID, false, false)
 	if err != nil {
 		return fmt.Errorf("failed to join voice channel: %v", err)
-
 	}
 
-	// VC connection is not always properly established so wait a little bit
-	time.Sleep(200 * time.Millisecond)
-
 	defer func() {
-		err = vc.Disconnect()
+		err = vc.Leave()
 		if err != nil {
 			logger.Error("Failed to disconnect from voice: %v", slog.Any("err", err))
 		}
 	}()
 
-	err = playSound(s, office, SoundConfig{SoundID: "1223777210650067056", Duration: 2 * time.Second})
+	err = playSound(c, office, SoundConfig{SoundID: "1223777210650067056", Duration: 2 * time.Second})
 	if err != nil {
-		return fmt.Errorf("failed to play joining sound: %v", err)
+		return fmt.Errorf("failed to play joining sound: %w", err)
 	}
 
 	for _, vs := range inOffice {
-		err := s.GuildMemberMove(office.GuildID, vs.UserID, &defaultChannel.ID)
+		err := c.ModifyGuildMember(office.GuildID, vs.UserID, discord.GuildMemberUpdate{
+			ChannelID: &defaultChannel.ID,
+		})
 		if err != nil {
 			return fmt.Errorf("error moving user %s: %v", vs.UserID, err)
 		}
@@ -129,13 +196,9 @@ func closeOffice(s *discordgo.Session, office *discordgo.Channel, defaultChannel
 		return fmt.Errorf("failed to switch channels: %v", err)
 	}
 
-	// VC connection is not always properly established so wait a little bit
-	time.Sleep(200 * time.Millisecond)
-
-	err = playSound(s, office, SoundConfig{SoundID: "1449829431693672641", Duration: 1 * time.Second})
+	err = playSound(c, defaultChannel, SoundConfig{SoundID: "1449829431693672641", Duration: 1 * time.Second})
 	if err != nil {
 		return fmt.Errorf("failed to play leaving sound: %v", err)
-
 	}
 
 	return nil
@@ -146,8 +209,8 @@ type SoundConfig struct {
 	Duration time.Duration
 }
 
-func playSound(s *discordgo.Session, channel *discordgo.Channel, data SoundConfig) error {
-	err := SendSoundboardSound(s, channel.ID, SoundboardSoundSend{SoundID: data.SoundID, GuildID: channel.GuildID})
+func playSound(c *discord.Client, channel *discord.Channel, data SoundConfig) error {
+	err := c.SendSoundboardSound(channel.ID, discord.SoundboardSound{SoundID: data.SoundID})
 	if err != nil {
 		return err
 	}

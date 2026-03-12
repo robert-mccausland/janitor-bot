@@ -10,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/robert-mccausland/janitor-bot/internal"
+	"github.com/robert-mccausland/janitor-bot/internal/logging"
 )
 
 func main() {
@@ -21,12 +22,12 @@ func main() {
 		fmt.Printf("WARNING: could not load .env file: %v", err)
 	}
 
-	shutdown, err := internal.SetupOTel(ctx)
+	shutdown, err := logging.SetupLogging(ctx)
 	if err != nil {
 		fmt.Printf("ERROR: unable to setup OTel: %v", err)
 	}
 
-	logger := internal.NewLogger("github.com/robert-mccausland/janitor-bot/main")
+	logger := logging.NewLogger("github.com/robert-mccausland/janitor-bot/main")
 	defer func() {
 		err := shutdown(ctx)
 		if err != nil {
@@ -35,18 +36,15 @@ func main() {
 	}()
 
 	logger.Info("janitor-bot is starting")
-	s, err := internal.SetupDiscordClient()
+	client, err := internal.SetupDiscordClient(ctx)
 	if err != nil {
 		logger.Error("Unable to setup discord client", slog.Any("err", err))
 	}
 	defer func() {
-		err := internal.ShutdownDiscordClient(s)
-		if err != nil {
-			logger.Error("Unable to shutdown discord client", slog.Any("err", err))
-		}
+		client.WaitForShutdown()
 	}()
 
-	err = internal.Janate(s)
+	err = internal.Janate(client, ctx)
 	if err != nil {
 		logger.Error("Error while janitoring", slog.Any("err", err))
 		return
