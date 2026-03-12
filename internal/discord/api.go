@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,7 +12,7 @@ import (
 
 func (d *Client) GetChannels(guildID string) (*[]Channel, error) {
 	if d.Guild(guildID) == nil {
-		return nil, fmt.Errorf("Could not find guild with ID: %s", guildID)
+		return nil, fmt.Errorf("could not find guild with ID: %s", guildID)
 	}
 
 	var response []channelObject
@@ -142,18 +143,31 @@ func (d *Client) doRequest(method, endpoint string, body any, responseValue any)
 	if body != nil {
 		go func() {
 			err := json.NewEncoder(requestWriter).Encode(body)
+
+			var closeErr error
 			if err != nil {
-				requestWriter.CloseWithError(err)
+				closeErr = requestWriter.CloseWithError(err)
+			} else {
+				closeErr = requestWriter.Close()
 			}
-			requestWriter.Close()
+
+			if closeErr != nil {
+				logger.Error(fmt.Sprintf("Unable to close writer: %v", closeErr), slog.Any("error", closeErr))
+			}
 		}()
 	} else {
-		requestWriter.Close()
+		closeErr := requestWriter.Close()
+		if closeErr != nil {
+			logger.Error(fmt.Sprintf("Unable to close writer: %v", closeErr), slog.Any("error", closeErr))
+		}
 	}
 
 	req, err := http.NewRequestWithContext(d.ctx, method, url, requestReader)
 	if err != nil {
-		requestReader.Close()
+		closeErr := requestReader.Close()
+		if closeErr != nil {
+			logger.Error(fmt.Sprintf("Unable to close reader: %v", closeErr), slog.Any("error", closeErr))
+		}
 		return fmt.Errorf("unable to create API request: %w", err)
 	}
 
@@ -165,7 +179,12 @@ func (d *Client) doRequest(method, endpoint string, body any, responseValue any)
 	if err != nil {
 		return fmt.Errorf("unable to send API request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			logger.Error(fmt.Sprintf("Unable to close response body: %v", closeErr), slog.Any("error", closeErr))
+		}
+	}()
 
 	if resp.StatusCode >= 400 {
 		var apiError discordAPIError

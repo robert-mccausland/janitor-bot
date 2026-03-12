@@ -41,7 +41,10 @@ func main() {
 		logger.Error("Unable to setup discord client", slog.Any("err", err))
 	}
 	defer func() {
-		client.WaitForShutdown()
+		err := client.WaitForShutdown()
+		if err != nil {
+			logger.Error("Error while waiting for discord client to shutdown", slog.Any("err", err))
+		}
 	}()
 
 	err = internal.Janate(client, ctx)

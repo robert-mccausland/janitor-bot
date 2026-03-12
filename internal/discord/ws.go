@@ -21,7 +21,7 @@ type gatewayPayload struct {
 func createPayload(op int, message any) (gatewayPayload, error) {
 	rawMessage, err := json.Marshal(message)
 	if err != nil {
-		return gatewayPayload{}, fmt.Errorf("Unable to marshal message: %v", err)
+		return gatewayPayload{}, fmt.Errorf("unable to marshal message: %v", err)
 	}
 
 	return gatewayPayload{
@@ -64,7 +64,7 @@ type identifyProperties struct {
 func (d *Client) initWSConnection() error {
 	conn, _, err := websocket.DefaultDialer.DialContext(d.ctx, d.options.GatewayURL, nil)
 	if err != nil {
-		return fmt.Errorf("Unable to create WS connection to discord gateway: %v", err)
+		return fmt.Errorf("unable to create WS connection to discord gateway: %w", err)
 	}
 	d.connection = conn
 
@@ -84,12 +84,12 @@ func (d *Client) initWSConnection() error {
 		Intents: d.intents,
 	})
 	if err != nil {
-		return fmt.Errorf("Unable to create identify payload: %w", err)
+		return fmt.Errorf("unable to create identify payload: %w", err)
 	}
 
 	err = d.connection.WriteJSON(identifyMessage)
 	if err != nil {
-		return fmt.Errorf("Unable to send identify message to discord gateway: %w", err)
+		return fmt.Errorf("unable to send identify message to discord gateway: %w", err)
 	}
 
 	go func() {
@@ -122,7 +122,7 @@ func (d *Client) startEventLoop() error {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return nil
 			}
-			return fmt.Errorf("Unable to read next message from discord gateway: %v", err)
+			return fmt.Errorf("unable to read next message from discord gateway: %w", err)
 		}
 
 		switch payload.Opcode {
@@ -147,11 +147,16 @@ func (d *Client) startEventLoop() error {
 			var helloMessage helloMessage
 			err := json.Unmarshal(payload.Data, &helloMessage)
 			if err != nil {
-				return fmt.Errorf("Error while parsing hello message: %v", err)
+				return fmt.Errorf("error while parsing hello message: %v", err)
 			}
 
 			d.isGreeted = true
-			go d.startHeartbeatLoop(helloMessage.HeartbeatInterval)
+			go func() {
+				err := d.startHeartbeatLoop(helloMessage.HeartbeatInterval)
+				if err != nil {
+					d.wsErrorCh <- err
+				}
+			}()
 		case 11:
 			now := time.Now()
 			d.lastHeartbeatRecievedAt.Store(now.UnixNano())
@@ -197,11 +202,11 @@ func (d *Client) startHeartbeatLoop(intervalMilliseconds int) error {
 
 		payload, err := createPayload(1, data)
 		if err != nil {
-			return fmt.Errorf("Unable to create heartbeat payload: %v", err)
+			return fmt.Errorf("unable to create heartbeat payload: %v", err)
 		}
 		err = d.connection.WriteJSON(payload)
 		if err != nil {
-			return fmt.Errorf("Unable to send heartbeat to discord gateway: %v", err)
+			return fmt.Errorf("unable to send heartbeat to discord gateway: %w", err)
 		}
 
 		now := time.Now()
@@ -217,11 +222,11 @@ func (d *Client) startHeartbeatLoop(intervalMilliseconds int) error {
 
 func (d *Client) handleEvent(payload gatewayPayload) error {
 	if payload.EventName == nil {
-		return fmt.Errorf("Expected event to contain a name")
+		return fmt.Errorf("expected event to contain a name")
 	}
 
 	if payload.SequenceNumber == nil {
-		return fmt.Errorf("Expected event to contain a sequence number")
+		return fmt.Errorf("expected event to contain a sequence number")
 	}
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
@@ -231,7 +236,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var readyMessage readyMessage
 		err := json.Unmarshal(payload.Data, &readyMessage)
 		if err != nil {
-			return fmt.Errorf("Unable to unmarshal ready message: %v", err)
+			return fmt.Errorf("unable to unmarshal ready message: %v", err)
 		}
 		d.user = &readyMessage.User
 		d.resumeURL = &readyMessage.ResumeURL
@@ -252,7 +257,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var guild guildObject
 		err := json.Unmarshal(payload.Data, &guild)
 		if err != nil {
-			return fmt.Errorf("Unable to unmarshal guild create message: %v", err)
+			return fmt.Errorf("unable to unmarshal guild create message: %w", err)
 		}
 
 		d.mu.Lock()
@@ -268,7 +273,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var guild guildObject
 		err := json.Unmarshal(payload.Data, &guild)
 		if err != nil {
-			return fmt.Errorf("Unable to unmarshal guild update message: %v", err)
+			return fmt.Errorf("unable to unmarshal guild update message: %w", err)
 		}
 
 		d.mu.Lock()
@@ -279,7 +284,11 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var g struct {
 			ID string `json:"id"`
 		}
-		json.Unmarshal(payload.Data, &g)
+		err := json.Unmarshal(payload.Data, &g)
+		if err != nil {
+			return fmt.Errorf("unable to unmarshal guild delete message: %w", err)
+		}
+
 		d.mu.Lock()
 		delete(d.guilds, g.ID)
 		d.mu.Unlock()
@@ -288,7 +297,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var voiceState voiceStateObject
 		err := json.Unmarshal(payload.Data, &voiceState)
 		if err != nil {
-			return fmt.Errorf("Unable to unmarshal voice state update message: %v", err)
+			return fmt.Errorf("unable to unmarshal voice state update message: %w", err)
 		}
 
 		d.voiceMu.Lock()
@@ -314,7 +323,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		var voiceServer voiceServerObject
 		err := json.Unmarshal(payload.Data, &voiceServer)
 		if err != nil {
-			return fmt.Errorf("Unable to unmarshal voice server update message: %v", err)
+			return fmt.Errorf("unable to unmarshal voice server update message: %w", err)
 		}
 
 		d.voiceMu.Lock()

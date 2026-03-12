@@ -61,12 +61,7 @@ type permissionOverwriteObject struct {
 }
 
 func (po permissionOverwriteObject) ToPermissionOverwrite() PermissionOverwrite {
-	return PermissionOverwrite{
-		ID:    po.ID,
-		Type:  po.Type,
-		Allow: po.Allow,
-		Deny:  po.Deny,
-	}
+	return PermissionOverwrite(po)
 }
 
 type unavailableGuildObject struct {
