@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/robert-mccausland/janitor-bot/internal/discord"
@@ -16,15 +15,7 @@ func SetupDiscordClient(ctx context.Context) (*discord.Client, error) {
 	}
 
 	client := discord.NewDiscordClient(discord.DefaultOptions())
-
-	go func() {
-		err := client.Run(ctx, token, int(discord.IntentGuilds|discord.IntentGuildVoiceStates))
-		if err != nil && err != context.Canceled {
-			logger.Error(fmt.Sprintf("Error while running discord client: %v", err), slog.Any("error", err))
-		}
-	}()
-
-	err := client.WaitForReady()
+	err := client.Start(ctx, token, int(discord.IntentGuilds|discord.IntentGuildVoiceStates))
 	if err != nil {
 		return nil, fmt.Errorf("error starting discord client: %w", err)
 	}

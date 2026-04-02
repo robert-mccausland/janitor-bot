@@ -3,13 +3,11 @@ package discord
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/robert-mccausland/janitor-bot/internal/logging"
 )
 
@@ -22,23 +20,19 @@ type Client struct {
 	intents int
 	options ClientOptions
 
-	ctx context.Context
+	ctx        context.Context
+	httpClient *http.Client
+	isRunning  bool
 
-	httpClient              *http.Client
-	connection              *websocket.Conn
-	user                    *userObject
-	sessionID               *string
-	resumeURL               *string
-	lastSequenceNumber      atomic.Int64
-	lastHeartbeatSentAt     atomic.Int64
-	lastHeartbeatRecievedAt atomic.Int64
-	isGreeted               bool
-	isRunning               bool
+	gatewayURL         *string
+	user               *userObject
+	sessionID          *string
+	resumeURL          *string
+	lastSequenceNumber atomic.Int64
+	wc                 *websocketClient
 
-	wsErrorCh       chan error
-	startingCh      chan struct{}
-	readyCh         chan struct{}
-	guildsLoadingCh chan struct{}
+	loadingCh chan struct{}
+	errorCh   chan error
 
 	mu                sync.RWMutex
 	guilds            map[string]Guild
@@ -51,7 +45,6 @@ type Client struct {
 type ClientOptions struct {
 	ApiURL                    string
 	ClientIdentifier          string
-	GatewayURL                string
 	HeartbeatMaxDelay         time.Duration
 	WSReadyTimeout            time.Duration
 	VoiceJoinTimeout          time.Duration
@@ -63,7 +56,6 @@ type ClientOptions struct {
 func DefaultOptions() ClientOptions {
 	return ClientOptions{
 		ApiURL:                    "https://discord.com/api/v10",
-		GatewayURL:                "wss://gateway.discord.gg/?v=10&encoding=json",
 		ClientIdentifier:          "janitor-bot-client",
 		HeartbeatMaxDelay:         5 * time.Second,
 		WSReadyTimeout:            10 * time.Second,
@@ -115,10 +107,7 @@ type PermissionOverwrite struct {
 func NewDiscordClient(options ClientOptions) *Client {
 	client := Client{
 		options:           options,
-		guildsLoadingCh:   make(chan struct{}),
-		startingCh:        make(chan struct{}),
-		readyCh:           make(chan struct{}),
-		wsErrorCh:         make(chan error),
+		loadingCh:         make(chan struct{}),
 		unavailableGuilds: make(map[string]struct{}),
 		guilds:            make(map[string]Guild),
 		voiceJoinSessions: make(map[string]voiceUpdateSession),
@@ -134,58 +123,32 @@ func NewDiscordClient(options ClientOptions) *Client {
 	return &client
 }
 
-func (d *Client) Run(ctx context.Context, token string, intents int) error {
+func (d *Client) Start(ctx context.Context, token string, intents int) error {
 	if d.isRunning {
 		return fmt.Errorf("discord client is already running")
 	}
-
-	ctx, cancel := context.WithCancel(ctx)
 
 	d.isRunning = true
 	d.token = token
 	d.intents = intents
 	d.ctx = ctx
 
-	defer cancel()
-
-	close(d.startingCh)
-
-	err := d.initWSConnection()
+	gatewayURL, err := d.getGatewayURL()
 	if err != nil {
-		return fmt.Errorf("unable to initialize websocket connection: %w", err)
+		return fmt.Errorf("unable to get gateway URL: %w", err)
 	}
-	defer func() {
-		err := d.closeWSConnection()
-		if err != nil {
-			logger.Error(fmt.Sprintf("Error while closing websocket connection: %v", err), slog.Any("error", err))
-		}
-	}()
+	d.gatewayURL = &gatewayURL
 
-	return d.WaitForShutdown()
+	err = d.startWSClient()
+	if err != nil {
+		return fmt.Errorf("error while running WS client: %w", err)
+	}
+
+	return nil
 }
 
-func (d *Client) WaitForReady() error {
-	<-d.startingCh
-
-	select {
-	case <-d.readyCh:
-		return nil
-	case err := <-d.wsErrorCh:
-		return fmt.Errorf("web socket error: %w", err)
-	case <-d.ctx.Done():
-		return d.ctx.Err()
-	}
-}
-
-func (d *Client) WaitForShutdown() error {
-	<-d.startingCh
-
-	select {
-	case err := <-d.wsErrorCh:
-		return fmt.Errorf("web socket error: %w", err)
-	case <-d.ctx.Done():
-		return d.ctx.Err()
-	}
+func (d *Client) Error() <-chan error {
+	return d.errorCh
 }
 
 func (d *Client) Guilds() []Guild {
@@ -193,7 +156,7 @@ func (d *Client) Guilds() []Guild {
 		return make([]Guild, 0)
 	}
 
-	<-d.guildsLoadingCh
+	<-d.loadingCh
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -212,7 +175,7 @@ func (d *Client) Guild(guildID string) *Guild {
 		return nil
 	}
 
-	<-d.guildsLoadingCh
+	<-d.loadingCh
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -229,7 +192,7 @@ func (d *Client) User() *User {
 		return nil
 	}
 
-	<-d.readyCh
+	<-d.loadingCh
 
 	user := d.user.ToUser()
 	return &user

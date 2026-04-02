@@ -25,35 +25,38 @@ func main() {
 	shutdown, err := logging.SetupLogging(ctx)
 	if err != nil {
 		fmt.Printf("ERROR: unable to setup OTel: %v", err)
+		return
 	}
 
 	logger := logging.NewLogger("github.com/robert-mccausland/janitor-bot/main")
 	defer func() {
 		err := shutdown(ctx)
 		if err != nil {
-			logger.Error("Unable to shutdown OTel", slog.Any("err", err))
+			logger.Error(fmt.Sprintf("Unable to shutdown OTel: %v", err), slog.Any("err", err))
 		}
 	}()
 
 	logger.Info("janitor-bot is starting")
 	client, err := internal.SetupDiscordClient(ctx)
 	if err != nil {
-		logger.Error("Unable to setup discord client", slog.Any("err", err))
+		logger.Error(fmt.Sprintf("Unable to setup discord client: %v", err), slog.Any("err", err))
+		return
 	}
-	defer func() {
-		err := client.WaitForShutdown()
-		if err != nil {
-			logger.Error("Error while waiting for discord client to shutdown", slog.Any("err", err))
-		}
-	}()
 
 	err = internal.Janate(client, ctx)
 	if err != nil {
-		logger.Error("Error while janitoring", slog.Any("err", err))
+		logger.Error(fmt.Sprintf("Error while janitoring: %v", err), slog.Any("err", err))
 		return
 	}
 
 	logger.Info("janitor-bot has started successfully")
-	<-ctx.Done()
+
+	select {
+	case err := <-ctx.Done():
+		logger.Info(fmt.Sprintf("Recieved shutdown signal: %v", err), slog.Any("err", err))
+	case err := <-client.Error():
+		logger.Error(fmt.Sprintf("Error while running discord client: %v", err), slog.Any("err", err))
+	}
+
 	logger.Info("janitor-bot is shutting down")
 }

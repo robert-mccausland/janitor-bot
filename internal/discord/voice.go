@@ -27,7 +27,7 @@ func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute boo
 		return nil, fmt.Errorf("unable to create voice state update payload: %v", err)
 	}
 
-	err = d.connection.WriteJSON(voiceStateUpdateMessage)
+	err = d.sendWSMessage(voiceStateUpdateMessage)
 	if err != nil {
 		return nil, fmt.Errorf("unable to send voice state update message to discord gateway: %v", err)
 	}
@@ -109,11 +109,7 @@ func (vc *DiscordVoiceClient) Leave() error {
 		return fmt.Errorf("unable to create voice leave payload: %v", err)
 	}
 
-	if vc.d.connection == nil {
-		return fmt.Errorf("connection to discord gateway has already been closed")
-	}
-
-	err = vc.d.connection.WriteJSON(payload)
+	err = vc.d.sendWSMessage(payload)
 	if err != nil {
 		return fmt.Errorf("unable to send voice leave message to discord gateway: %v", err)
 	}

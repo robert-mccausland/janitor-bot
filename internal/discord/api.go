@@ -130,6 +130,19 @@ func (d *Client) SendSoundboardSound(channelID string, sound SoundboardSound) er
 	return nil
 }
 
+func (d *Client) getGatewayURL() (string, error) {
+	var response struct {
+		URL string `json:"url"`
+	}
+
+	err := d.doRequest("GET", "/gateway", nil, &response)
+	if err != nil {
+		return "", fmt.Errorf("unable to get gateway URL from REST API: %w", err)
+	}
+
+	return response.URL, nil
+}
+
 type discordAPIError struct {
 	Message string          `json:"message"`
 	Code    int             `json:"code"`

@@ -1,11 +1,13 @@
 package discord
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -61,85 +63,211 @@ type identifyProperties struct {
 	Device  string `json:"$device"`
 }
 
-func (d *Client) initWSConnection() error {
-	conn, _, err := websocket.DefaultDialer.DialContext(d.ctx, d.options.GatewayURL, nil)
+type resumeMessage struct {
+	Token     string `json:"token"`
+	SessionID string `json:"session_id"`
+	Sequence  int    `json:"seq"`
+}
+
+type websocketClient struct {
+	client *Client
+
+	ctx                     context.Context
+	connection              *websocket.Conn
+	lastHeartbeatSentAt     atomic.Int64
+	lastHeartbeatRecievedAt atomic.Int64
+	isGreeted               bool
+
+	readyCh chan struct{}
+	errorCh chan error
+}
+
+func (d *Client) startWSClient() error {
+	wc := d.newWSClient()
+	err := wc.start()
+	if err != nil {
+		return fmt.Errorf("error while starting websocket client: %v", err)
+	}
+	d.wc = &wc
+
+	go func() {
+		for {
+			select {
+			case <-d.ctx.Done():
+				return
+			case err = <-wc.errorCh:
+			}
+
+			err := d.restartWSClient(err)
+			if err != nil {
+				d.errorCh <- err
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (d *Client) restartWSClient(previousError error) error {
+	if closeError, ok := previousError.(*websocket.CloseError); ok {
+		switch closeError.Code {
+		case 4000, 4001, 4002, 4005, 4008:
+			logger.Warn(fmt.Sprintf("Websocket closed with code %d, reconnecting", closeError.Code), slog.Int("ws_code", closeError.Code))
+		case 4003, 4007, 4009:
+			logger.Warn(fmt.Sprintf("Websocket closed with code %d, reconnecting with new session", closeError.Code), slog.Int("ws_code", closeError.Code))
+			d.sessionID = nil
+		case 4004, 4010, 4011, 4012, 4013, 4014:
+			return fmt.Errorf("websocket closed with code %d, closing client", closeError.Code)
+		default:
+			return fmt.Errorf("websocket closed with unrecognized code %d, closing client", closeError.Code)
+
+		}
+	} else {
+		return fmt.Errorf("error while running websocket client: %v", previousError)
+	}
+
+	wc := d.newWSClient()
+	d.wc = &wc
+	err := d.wc.start()
+	if err != nil {
+		return fmt.Errorf("error while resuming websocket client: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Client) sendWSMessage(payload gatewayPayload) error {
+	<-d.wc.readyCh
+	return d.wc.connection.WriteJSON(payload)
+}
+
+func (d *Client) newWSClient() websocketClient {
+	return websocketClient{
+		client:  d,
+		readyCh: make(chan struct{}),
+		errorCh: make(chan error),
+	}
+}
+
+func (wc *websocketClient) start() error {
+	ctx, cancel := context.WithCancel(wc.client.ctx)
+	defer cancel()
+
+	url := *wc.client.gatewayURL
+	if wc.client.resumeURL != nil {
+		url = *wc.client.resumeURL
+	}
+
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, url+"?v=10&encoding=json", nil)
 	if err != nil {
 		return fmt.Errorf("unable to create WS connection to discord gateway: %w", err)
 	}
-	d.connection = conn
+
+	wc.ctx = ctx
+	wc.connection = conn
 
 	go func() {
-		err := d.startEventLoop()
+		<-ctx.Done()
+		err := wc.connection.Close()
 		if err != nil {
-			d.wsErrorCh <- err
+			logger.Error(fmt.Sprintf("unable to close connection to discord gateway: %v", err), slog.Any("error", err))
 		}
 	}()
-
-	identifyMessage, err := createPayload(2, identifyMessage{
-		Token: "Bot " + d.token,
-		Properties: identifyProperties{
-			OS:      runtime.GOOS,
-			Browser: d.options.ClientIdentifier,
-		},
-		Intents: d.intents,
-	})
-	if err != nil {
-		return fmt.Errorf("unable to create identify payload: %w", err)
-	}
-
-	err = d.connection.WriteJSON(identifyMessage)
-	if err != nil {
-		return fmt.Errorf("unable to send identify message to discord gateway: %w", err)
-	}
 
 	go func() {
-		select {
-		case <-time.After(d.options.WSReadyTimeout):
-			d.wsErrorCh <- fmt.Errorf("Client did not become ready after waiting for %.2f seconds", d.options.WSReadyTimeout.Seconds())
-		case <-d.readyCh:
-		case <-d.ctx.Done():
-		}
+		err := wc.startEventLoop()
+		wc.errorCh <- err
 	}()
 
-	return nil
+	err = wc.createOrResumeSession()
+	if err != nil {
+		return err
+	}
+
+	select {
+	case <-time.After(wc.client.options.WSReadyTimeout):
+		return fmt.Errorf("Websocket client did not become ready after waiting for %.2f seconds", wc.client.options.WSReadyTimeout.Seconds())
+	case <-wc.readyCh:
+		return nil
+	case <-wc.ctx.Done():
+		return wc.ctx.Err()
+	}
 }
 
-func (d *Client) closeWSConnection() error {
-	err := d.connection.Close()
-	if err != nil {
-		return fmt.Errorf("unable to close connection to discord gateway: %w", err)
+func (wc *websocketClient) createOrResumeSession() error {
+	if wc.client.sessionID == nil {
+		identifyMessage, err := createPayload(2, identifyMessage{
+			Token: "Bot " + wc.client.token,
+			Properties: identifyProperties{
+				OS:      runtime.GOOS,
+				Browser: wc.client.options.ClientIdentifier,
+			},
+			Intents: wc.client.intents,
+		})
+		if err != nil {
+			return fmt.Errorf("unable to create identify payload: %w", err)
+		}
+
+		err = wc.connection.WriteJSON(identifyMessage)
+		if err != nil {
+			return fmt.Errorf("unable to send identify message to discord gateway: %w", err)
+		}
+	} else {
+		resumeMessage, err := createPayload(6, resumeMessage{
+			Token:     "Bot " + wc.client.token,
+			SessionID: *wc.client.sessionID,
+			Sequence:  int(wc.client.lastSequenceNumber.Load()),
+		})
+		if err != nil {
+			return fmt.Errorf("unable to create resume payload: %w", err)
+		}
+
+		err = wc.connection.WriteJSON(resumeMessage)
+		if err != nil {
+			return fmt.Errorf("unable to send resume message to discord gateway: %w", err)
+		}
 	}
 
 	return nil
 }
 
-func (d *Client) startEventLoop() error {
+func (wc *websocketClient) startEventLoop() error {
 	for {
 		var payload gatewayPayload
 
-		err := d.connection.ReadJSON(&payload)
+		err := wc.connection.ReadJSON(&payload)
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				return nil
-			}
-			return fmt.Errorf("unable to read next message from discord gateway: %w", err)
+			return err
 		}
 
 		switch payload.Opcode {
 		case 0:
-			err = d.handleEvent(payload)
+			err = wc.client.handleEvent(payload)
 			if err != nil {
 				// Do not stop event loop when individual events throw errors
 				logger.Error(fmt.Sprintf("Error while handling event: %v", err), slog.Any("error", err))
 			}
 		case 7:
-			//TODO
-			logger.Warn("Reconnection is not implemented")
+			logger.Warn("Recieved reconnect event, reconnecting to websocket server...")
+			wc.connection.Close()
 		case 9:
-			//TODO
-			logger.Warn("Invalid session is not implemented")
+			var resumable bool
+			err := json.Unmarshal(payload.Data, &resumable)
+			if err != nil {
+				return fmt.Errorf("error while parsing invalid session message: %v", err)
+			}
+
+			if !resumable {
+				logger.Warn("Recieved invalid session event, reconnecting to websocket server with new session...")
+				wc.client.sessionID = nil
+			} else {
+				logger.Warn("Recieved invalid session event, reconnecting to websocket server...")
+			}
+
+			wc.connection.Close()
 		case 10:
-			if d.isGreeted {
+			if wc.isGreeted {
 				logger.Warn("Gateway has already greeted client, ignoring hello message")
 				break
 			}
@@ -150,25 +278,25 @@ func (d *Client) startEventLoop() error {
 				return fmt.Errorf("error while parsing hello message: %v", err)
 			}
 
-			d.isGreeted = true
+			wc.isGreeted = true
 			go func() {
-				err := d.startHeartbeatLoop(helloMessage.HeartbeatInterval)
+				err := wc.startHeartbeatLoop(helloMessage.HeartbeatInterval)
 				if err != nil {
-					d.wsErrorCh <- err
+					wc.errorCh <- err
 				}
 			}()
 		case 11:
 			now := time.Now()
-			d.lastHeartbeatRecievedAt.Store(now.UnixNano())
+			wc.lastHeartbeatRecievedAt.Store(now.UnixNano())
 
-			if d.lastHeartbeatSentAt.Load() == 0 {
+			if wc.lastHeartbeatSentAt.Load() == 0 {
 				logger.Warn("Heartbeat response recieved before any heartbeats were sent")
 				break
 			}
 
-			heartbeatDelay := time.Since(time.Unix(0, d.lastHeartbeatSentAt.Load()))
-			if d.options.HeartbeatMaxDelay < heartbeatDelay {
-				logger.Warn(fmt.Sprintf("Heartbeat response after long delay of %.2f seconds", d.options.HeartbeatMaxDelay.Seconds()))
+			heartbeatDelay := time.Since(time.Unix(0, wc.lastHeartbeatSentAt.Load()))
+			if wc.client.options.HeartbeatMaxDelay < heartbeatDelay {
+				logger.Warn(fmt.Sprintf("Heartbeat response after long delay of %.2f seconds", wc.client.options.HeartbeatMaxDelay.Seconds()))
 			}
 
 		default:
@@ -177,25 +305,25 @@ func (d *Client) startEventLoop() error {
 	}
 }
 
-func (d *Client) startHeartbeatLoop(intervalMilliseconds int) error {
+func (wc *websocketClient) startHeartbeatLoop(intervalMilliseconds int) error {
 	interval := time.Millisecond * time.Duration(intervalMilliseconds)
 	initialJitter := time.Duration(float64(interval) * rand.Float64())
 
 	select {
-	case <-d.ctx.Done():
-		return d.ctx.Err()
+	case <-wc.ctx.Done():
+		return wc.ctx.Err()
 	case <-time.After(initialJitter):
 	}
 
 	ticker := time.NewTicker(interval)
 	for {
-		sentNano := d.lastHeartbeatSentAt.Load()
-		recvNano := d.lastHeartbeatRecievedAt.Load()
+		sentNano := wc.lastHeartbeatSentAt.Load()
+		recvNano := wc.lastHeartbeatRecievedAt.Load()
 		if sentNano != 0 && (recvNano == 0 || sentNano > recvNano) {
 			logger.Warn("No heartbeat recieved after previous heartbeat was sent")
 		}
 
-		var data any = d.lastSequenceNumber.Load()
+		var data any = wc.client.lastSequenceNumber.Load()
 		if data == 0 {
 			data = nil
 		}
@@ -204,17 +332,17 @@ func (d *Client) startHeartbeatLoop(intervalMilliseconds int) error {
 		if err != nil {
 			return fmt.Errorf("unable to create heartbeat payload: %v", err)
 		}
-		err = d.connection.WriteJSON(payload)
+		err = wc.connection.WriteJSON(payload)
 		if err != nil {
 			return fmt.Errorf("unable to send heartbeat to discord gateway: %w", err)
 		}
 
 		now := time.Now()
-		d.lastHeartbeatSentAt.Store(now.UnixNano())
+		wc.lastHeartbeatSentAt.Store(now.UnixNano())
 
 		select {
-		case <-d.ctx.Done():
-			return d.ctx.Err()
+		case <-wc.ctx.Done():
+			return wc.ctx.Err()
 		case <-ticker.C:
 		}
 	}
@@ -248,10 +376,13 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		}
 		d.mu.Unlock()
 
-		close(d.readyCh)
+		close(d.wc.readyCh)
 		if len(d.unavailableGuilds) == 0 {
-			close(d.guildsLoadingCh)
+			close(d.loadingCh)
 		}
+
+	case "RESUMED":
+		close(d.wc.readyCh)
 
 	case "GUILD_CREATE":
 		var guild guildObject
@@ -266,7 +397,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		d.mu.Unlock()
 
 		if len(d.unavailableGuilds) == 0 {
-			close(d.guildsLoadingCh)
+			close(d.loadingCh)
 		}
 
 	case "GUILD_UPDATE":
