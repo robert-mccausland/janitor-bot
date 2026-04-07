@@ -3,9 +3,11 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -84,11 +86,12 @@ type websocketClient struct {
 
 func (d *Client) startWSClient() error {
 	wc := d.newWSClient()
+	d.wc = &wc
+
 	err := wc.start()
 	if err != nil {
 		return fmt.Errorf("error while starting websocket client: %v", err)
 	}
-	d.wc = &wc
 
 	go func() {
 		for {
@@ -110,7 +113,9 @@ func (d *Client) startWSClient() error {
 }
 
 func (d *Client) restartWSClient(previousError error) error {
-	if closeError, ok := previousError.(*websocket.CloseError); ok {
+	fmt.Println("restarting WS client")
+	if previousError == nil {
+	} else if closeError, ok := previousError.(*websocket.CloseError); ok {
 		switch closeError.Code {
 		case 4000, 4001, 4002, 4005, 4008:
 			logger.Warn(fmt.Sprintf("Websocket closed with code %d, reconnecting", closeError.Code), slog.Int("ws_code", closeError.Code))
@@ -139,6 +144,19 @@ func (d *Client) restartWSClient(previousError error) error {
 
 func (d *Client) sendWSMessage(payload gatewayPayload) error {
 	<-d.wc.readyCh
+
+	// During reconnects we may get socket closed errors even if we wait for the ready channel
+	// This handles those gracefully
+	for range d.options.WebsocketRetryLimit {
+		err := d.wc.connection.WriteJSON(payload)
+		if errors.Is(err, net.ErrClosed) {
+			<-time.After(d.options.WSReadyTimeout)
+			<-d.wc.readyCh
+		} else {
+			return err
+		}
+	}
+
 	return d.wc.connection.WriteJSON(payload)
 }
 
@@ -151,8 +169,7 @@ func (d *Client) newWSClient() websocketClient {
 }
 
 func (wc *websocketClient) start() error {
-	ctx, cancel := context.WithCancel(wc.client.ctx)
-	defer cancel()
+	ctx := wc.client.ctx
 
 	url := *wc.client.gatewayURL
 	if wc.client.resumeURL != nil {
@@ -176,7 +193,7 @@ func (wc *websocketClient) start() error {
 	}()
 
 	go func() {
-		err := wc.startEventLoop()
+		err := wc.runEventLoop()
 		wc.errorCh <- err
 	}()
 
@@ -190,6 +207,8 @@ func (wc *websocketClient) start() error {
 		return fmt.Errorf("Websocket client did not become ready after waiting for %.2f seconds", wc.client.options.WSReadyTimeout.Seconds())
 	case <-wc.readyCh:
 		return nil
+	case err = <-wc.errorCh:
+		return err
 	case <-wc.ctx.Done():
 		return wc.ctx.Err()
 	}
@@ -232,13 +251,17 @@ func (wc *websocketClient) createOrResumeSession() error {
 	return nil
 }
 
-func (wc *websocketClient) startEventLoop() error {
+func (wc *websocketClient) runEventLoop() error {
 	for {
 		var payload gatewayPayload
 
 		err := wc.connection.ReadJSON(&payload)
 		if err != nil {
 			return err
+		}
+
+		if !wc.isGreeted && payload.Opcode != 10 {
+			return fmt.Errorf("Expected first message to be a hello message")
 		}
 
 		switch payload.Opcode {
@@ -251,6 +274,7 @@ func (wc *websocketClient) startEventLoop() error {
 		case 7:
 			logger.Warn("Recieved reconnect event, reconnecting to websocket server...")
 			wc.connection.Close()
+			return nil
 		case 9:
 			var resumable bool
 			err := json.Unmarshal(payload.Data, &resumable)
@@ -266,6 +290,7 @@ func (wc *websocketClient) startEventLoop() error {
 			}
 
 			wc.connection.Close()
+			return nil
 		case 10:
 			if wc.isGreeted {
 				logger.Warn("Gateway has already greeted client, ignoring hello message")

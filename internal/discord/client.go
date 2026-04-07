@@ -51,6 +51,8 @@ type ClientOptions struct {
 	RestAPITimeout            time.Duration
 	HttpIdleConnectionTimeout time.Duration
 	HttpMaxIdleConnections    int
+	WebsocketRetryTimeout     time.Duration
+	WebsocketRetryLimit       int
 }
 
 func DefaultOptions() ClientOptions {
@@ -63,6 +65,8 @@ func DefaultOptions() ClientOptions {
 		RestAPITimeout:            10 * time.Second,
 		HttpIdleConnectionTimeout: 60 * time.Second,
 		HttpMaxIdleConnections:    10,
+		WebsocketRetryTimeout:     1 * time.Second,
+		WebsocketRetryLimit:       5,
 	}
 }
 
@@ -123,20 +127,21 @@ func NewDiscordClient(options ClientOptions) *Client {
 	return &client
 }
 
-func (d *Client) Start(ctx context.Context, token string, intents int) error {
+func (d *Client) Start(ctx context.Context, token string, intents Intent) error {
 	if d.isRunning {
 		return fmt.Errorf("discord client is already running")
 	}
 
 	d.isRunning = true
 	d.token = token
-	d.intents = intents
+	d.intents = int(intents)
 	d.ctx = ctx
 
 	gatewayURL, err := d.getGatewayURL()
 	if err != nil {
 		return fmt.Errorf("unable to get gateway URL: %w", err)
 	}
+
 	d.gatewayURL = &gatewayURL
 
 	err = d.startWSClient()

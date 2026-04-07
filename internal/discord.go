@@ -15,7 +15,7 @@ func SetupDiscordClient(ctx context.Context) (*discord.Client, error) {
 	}
 
 	client := discord.NewDiscordClient(discord.DefaultOptions())
-	err := client.Start(ctx, token, int(discord.IntentGuilds|discord.IntentGuildVoiceStates))
+	err := client.Start(ctx, token, discord.IntentGuilds|discord.IntentGuildVoiceStates)
 	if err != nil {
 		return nil, fmt.Errorf("error starting discord client: %w", err)
 	}
