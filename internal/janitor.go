@@ -101,15 +101,15 @@ func sweepChannel(c *discord.Client, channel *discord.Channel) error {
 		}
 	}()
 
-	<-time.After(time.Second * 2)
-	if rand.Intn(6) == 0 {
-		logger.Info("Kachigga")
+	<-time.After(time.Second * 1)
+	if rand.Intn(2) == 0 {
+		logger.Info("Fling it now!")
 		err = playSound(c, channel, SoundConfig{SoundID: "1452798245351854332"})
 		if err != nil {
 			return fmt.Errorf("failed to play sweep sound: %w", err)
 		}
 	}
-	<-time.After(time.Second * time.Duration(rand.Intn(25)+3))
+	<-time.After(time.Second * time.Duration(rand.Intn(7)+3))
 	return nil
 }
 
