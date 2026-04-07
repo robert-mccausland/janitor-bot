@@ -204,7 +204,7 @@ func (wc *websocketClient) start() error {
 
 	select {
 	case <-time.After(wc.client.options.WSReadyTimeout):
-		return fmt.Errorf("Websocket client did not become ready after waiting for %.2f seconds", wc.client.options.WSReadyTimeout.Seconds())
+		return fmt.Errorf("websocket client did not become ready after waiting for %.2f seconds", wc.client.options.WSReadyTimeout.Seconds())
 	case <-wc.readyCh:
 		return nil
 	case err = <-wc.errorCh:
@@ -261,7 +261,7 @@ func (wc *websocketClient) runEventLoop() error {
 		}
 
 		if !wc.isGreeted && payload.Opcode != 10 {
-			return fmt.Errorf("Expected first message to be a hello message")
+			return fmt.Errorf("expected first message to be a hello message")
 		}
 
 		switch payload.Opcode {
@@ -273,8 +273,8 @@ func (wc *websocketClient) runEventLoop() error {
 			}
 		case 7:
 			logger.Warn("Recieved reconnect event, reconnecting to websocket server...")
-			wc.connection.Close()
-			return nil
+			err := wc.connection.Close()
+			return err
 		case 9:
 			var resumable bool
 			err := json.Unmarshal(payload.Data, &resumable)
@@ -289,8 +289,8 @@ func (wc *websocketClient) runEventLoop() error {
 				logger.Warn("Recieved invalid session event, reconnecting to websocket server...")
 			}
 
-			wc.connection.Close()
-			return nil
+			err = wc.connection.Close()
+			return err
 		case 10:
 			if wc.isGreeted {
 				logger.Warn("Gateway has already greeted client, ignoring hello message")
