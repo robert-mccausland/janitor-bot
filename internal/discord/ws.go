@@ -258,8 +258,6 @@ func (wc *websocketClient) runEventLoop() error {
 			return err
 		}
 
-		logger.Info(fmt.Sprintf("Recieved message from gateway, opcode: %d", payload.Opcode))
-
 		if !wc.isGreeted && payload.Opcode != 10 {
 			return fmt.Errorf("expected first message to be a hello message")
 		}
@@ -272,7 +270,7 @@ func (wc *websocketClient) runEventLoop() error {
 				logger.Error(fmt.Sprintf("Error while handling event: %v", err), slog.Any("error", err))
 			}
 		case 7:
-			logger.Warn("Recieved reconnect event, reconnecting to websocket server...")
+			logger.Warn("Recieved reconnect message from gateway, reconnecting to websocket server...")
 			err := wc.connection.Close()
 			return err
 		case 9:
@@ -283,10 +281,10 @@ func (wc *websocketClient) runEventLoop() error {
 			}
 
 			if !resumable {
-				logger.Warn("Recieved invalid session event, reconnecting to websocket server with new session...")
+				logger.Warn("Recieved invalid session message from gateway, reconnecting to websocket server with new session...")
 				wc.client.sessionID = nil
 			} else {
-				logger.Warn("Recieved invalid session event, reconnecting to websocket server...")
+				logger.Warn("Recieved invalid session event from gateway, reconnecting to websocket server...")
 			}
 
 			err = wc.connection.Close()
@@ -296,6 +294,8 @@ func (wc *websocketClient) runEventLoop() error {
 				logger.Warn("Gateway has already greeted client, ignoring hello message")
 				break
 			}
+
+			logger.Info("Recieved hello message from gateway")
 
 			var helloMessage helloMessage
 			err := json.Unmarshal(payload.Data, &helloMessage)
@@ -382,7 +382,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		return fmt.Errorf("expected event to contain a sequence number")
 	}
 
-	logger.Info(fmt.Sprintf("Handling gateway event, name: %s", *payload.EventName))
+	logger.Info(fmt.Sprintf("Recieved event message from gateway, event name: %s", *payload.EventName))
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
 

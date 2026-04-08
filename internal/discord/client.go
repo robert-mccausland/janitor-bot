@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,7 @@ type ClientOptions struct {
 	HttpMaxIdleConnections    int
 	WebsocketRetryTimeout     time.Duration
 	WebsocketRetryLimit       int
+	StatusLogInterval         time.Duration
 }
 
 func DefaultOptions() ClientOptions {
@@ -67,6 +69,7 @@ func DefaultOptions() ClientOptions {
 		HttpMaxIdleConnections:    10,
 		WebsocketRetryTimeout:     1 * time.Second,
 		WebsocketRetryLimit:       5,
+		StatusLogInterval:         15 * time.Minute,
 	}
 }
 
@@ -148,6 +151,35 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 	if err != nil {
 		return fmt.Errorf("error while starting websocket client: %w", err)
 
+	}
+
+	if d.options.StatusLogInterval > 0 {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(d.options.StatusLogInterval):
+				}
+
+				lastHeartbeatReceived := time.Unix(0, d.wc.lastHeartbeatRecievedAt.Load()).UTC().Format(time.RFC3339)
+				lastHeartbeatSend := time.Unix(0, d.wc.lastHeartbeatSentAt.Load()).UTC().Format(time.RFC3339)
+				lastSequenceNumber := d.lastSequenceNumber.Load()
+				sessionID := ""
+				if d.sessionID != nil {
+					sessionID = *d.sessionID
+				}
+
+				logger.Info(fmt.Sprintf(
+					"Discord client status: heartbeatRecievedAt: %s, heartbeatSentAt: %s, sequenceNumber: %d, sessionId: %s",
+					lastHeartbeatReceived, lastHeartbeatSend, lastSequenceNumber, sessionID),
+					slog.String("heartbeatRecievedAt", lastHeartbeatReceived),
+					slog.String("heartbeatSentAt", lastHeartbeatReceived),
+					slog.Int64("sequenceNumber", lastSequenceNumber),
+					slog.String("sessionId", sessionID),
+				)
+			}
+		}()
 	}
 
 	return nil
