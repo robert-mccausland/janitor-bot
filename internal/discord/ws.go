@@ -260,6 +260,8 @@ func (wc *websocketClient) runEventLoop() error {
 			return err
 		}
 
+		logger.Info(fmt.Sprintf("Recieved message from gateway, opcode: %d", payload.Opcode))
+
 		if !wc.isGreeted && payload.Opcode != 10 {
 			return fmt.Errorf("expected first message to be a hello message")
 		}
@@ -381,6 +383,8 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 	if payload.SequenceNumber == nil {
 		return fmt.Errorf("expected event to contain a sequence number")
 	}
+
+	logger.Info(fmt.Sprintf("Handling gateway event, name: %s", *payload.EventName))
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
 
