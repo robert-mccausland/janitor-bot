@@ -150,22 +150,6 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 
 	}
 
-	go func() {
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Minute * 5):
-			}
-
-			lastHeartbeatReceived := time.Unix(0, d.wc.lastHeartbeatRecievedAt.Load()).UTC().Format(time.RFC3339)
-			lastHeartbeatSend := time.Unix(0, d.wc.lastHeartbeatSentAt.Load()).UTC().Format(time.RFC3339)
-			lastSequenceNumber := d.lastSequenceNumber.Load()
-			logger.Info(fmt.Sprintf("Discord client status: last heartbeat recieved at %s, last heartbeat sent at %s, last sequence number %d", lastHeartbeatReceived, lastHeartbeatSend, lastSequenceNumber))
-		}
-	}()
-
 	return nil
 }
 
