@@ -183,10 +183,7 @@ func (wc *websocketClient) start() error {
 
 	go func() {
 		<-ctx.Done()
-		err := wc.connection.Close()
-		if err != nil && !errors.Is(err, net.ErrClosed) {
-			logger.Error(fmt.Sprintf("unable to close connection to discord gateway: %v", err), slog.Any("error", err))
-		}
+		wc.close()
 	}()
 
 	go func() {
@@ -304,12 +301,7 @@ func (wc *websocketClient) runEventLoop() error {
 			}
 
 			wc.isGreeted = true
-			go func() {
-				err := wc.startHeartbeatLoop(helloMessage.HeartbeatInterval)
-				if err != nil {
-					wc.errorCh <- err
-				}
-			}()
+			go wc.runHeartbeatLoop(helloMessage.HeartbeatInterval)
 		case 11:
 			now := time.Now()
 			wc.lastHeartbeatRecievedAt.Store(now.UnixNano())
@@ -330,13 +322,13 @@ func (wc *websocketClient) runEventLoop() error {
 	}
 }
 
-func (wc *websocketClient) startHeartbeatLoop(intervalMilliseconds int) error {
+func (wc *websocketClient) runHeartbeatLoop(intervalMilliseconds int) {
 	interval := time.Millisecond * time.Duration(intervalMilliseconds)
 	initialJitter := time.Duration(float64(interval) * rand.Float64())
 
 	select {
 	case <-wc.ctx.Done():
-		return wc.ctx.Err()
+		return
 	case <-time.After(initialJitter):
 	}
 
@@ -355,11 +347,16 @@ func (wc *websocketClient) startHeartbeatLoop(intervalMilliseconds int) error {
 
 		payload, err := createPayload(1, data)
 		if err != nil {
-			return fmt.Errorf("unable to create heartbeat payload: %v", err)
+			logger.Error(fmt.Sprintf("unable to create heartbeat payload: %v", err), slog.Any("error", err))
+			wc.close()
+			return
 		}
+
 		err = wc.connection.WriteJSON(payload)
 		if err != nil {
-			return fmt.Errorf("unable to send heartbeat to discord gateway: %w", err)
+			logger.Error(fmt.Sprintf("unable to send heartbeat to discord gateway: %v", err), slog.Any("error", err))
+			wc.close()
+			return
 		}
 
 		now := time.Now()
@@ -367,7 +364,8 @@ func (wc *websocketClient) startHeartbeatLoop(intervalMilliseconds int) error {
 
 		select {
 		case <-wc.ctx.Done():
-			return wc.ctx.Err()
+			logger.Info("Heatbeat loop stopping")
+			return
 		case <-ticker.C:
 		}
 	}
@@ -495,4 +493,11 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 	}
 
 	return nil
+}
+
+func (wc *websocketClient) close() {
+	err := wc.connection.Close()
+	if err != nil && !errors.Is(err, net.ErrClosed) {
+		logger.Error(fmt.Sprintf("unable to close connection to discord gateway: %v", err), slog.Any("error", err))
+	}
 }
