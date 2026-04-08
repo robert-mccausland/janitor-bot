@@ -144,9 +144,10 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 
 	d.gatewayURL = &gatewayURL
 
-	err = d.startWSClient()
+	err = d.startWebsockets()
 	if err != nil {
-		return fmt.Errorf("error while running WS client: %w", err)
+		return fmt.Errorf("error while starting websocket client: %w", err)
+
 	}
 
 	go func() {

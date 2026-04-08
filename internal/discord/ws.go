@@ -84,13 +84,10 @@ type websocketClient struct {
 	errorCh chan error
 }
 
-func (d *Client) startWSClient() error {
-	wc := d.newWSClient()
-	d.wc = &wc
-
-	err := wc.start()
+func (d *Client) startWebsockets() error {
+	err := d.startNewWebsocketClient(nil)
 	if err != nil {
-		return fmt.Errorf("error while starting websocket client: %v", err)
+		return err
 	}
 
 	go func() {
@@ -98,10 +95,10 @@ func (d *Client) startWSClient() error {
 			select {
 			case <-d.ctx.Done():
 				return
-			case err = <-wc.errorCh:
+			case err = <-d.wc.errorCh:
 			}
 
-			err := d.restartWSClient(err)
+			err := d.startNewWebsocketClient(err)
 			if err != nil {
 				d.errorCh <- err
 				return
@@ -112,8 +109,7 @@ func (d *Client) startWSClient() error {
 	return nil
 }
 
-func (d *Client) restartWSClient(previousError error) error {
-	fmt.Println("restarting WS client")
+func (d *Client) startNewWebsocketClient(previousError error) error {
 	if previousError == nil {
 	} else if closeError, ok := previousError.(*websocket.CloseError); ok {
 		switch closeError.Code {
@@ -136,7 +132,7 @@ func (d *Client) restartWSClient(previousError error) error {
 	d.wc = &wc
 	err := d.wc.start()
 	if err != nil {
-		return fmt.Errorf("error while resuming websocket client: %v", err)
+		return fmt.Errorf("error while starting websocket client: %v", err)
 	}
 
 	return nil
@@ -169,7 +165,7 @@ func (d *Client) newWSClient() websocketClient {
 }
 
 func (wc *websocketClient) start() error {
-	ctx := wc.client.ctx
+	ctx, cancel := context.WithCancel(wc.client.ctx)
 
 	url := *wc.client.gatewayURL
 	if wc.client.resumeURL != nil {
@@ -178,6 +174,7 @@ func (wc *websocketClient) start() error {
 
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, url+"?v=10&encoding=json", nil)
 	if err != nil {
+		cancel()
 		return fmt.Errorf("unable to create WS connection to discord gateway: %w", err)
 	}
 
@@ -187,13 +184,14 @@ func (wc *websocketClient) start() error {
 	go func() {
 		<-ctx.Done()
 		err := wc.connection.Close()
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			logger.Error(fmt.Sprintf("unable to close connection to discord gateway: %v", err), slog.Any("error", err))
 		}
 	}()
 
 	go func() {
 		err := wc.runEventLoop()
+		cancel()
 		wc.errorCh <- err
 	}()
 
