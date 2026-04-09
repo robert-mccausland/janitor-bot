@@ -122,7 +122,6 @@ func (d *Client) startNewWebsocketClient(previousError error) error {
 			return fmt.Errorf("websocket closed with code %d, closing client", closeError.Code)
 		default:
 			return fmt.Errorf("websocket closed with unrecognized code %d, closing client", closeError.Code)
-
 		}
 	} else {
 		return fmt.Errorf("error while running websocket client: %v", previousError)
@@ -364,7 +363,6 @@ func (wc *websocketClient) runHeartbeatLoop(intervalMilliseconds int) {
 
 		select {
 		case <-wc.ctx.Done():
-			logger.Info("Heatbeat loop stopping")
 			return
 		case <-ticker.C:
 		}

@@ -51,12 +51,9 @@ func main() {
 
 	logger.Info("janitor-bot has started successfully")
 
-	select {
-	case err := <-ctx.Done():
-		logger.Info(fmt.Sprintf("Recieved shutdown signal: %v", err), slog.Any("err", err))
-	case err := <-client.Error():
-		logger.Error(fmt.Sprintf("Error while running discord client: %v", err), slog.Any("err", err))
+	err = client.BlockUntilDone()
+	if err != nil {
+		logger.Error(fmt.Sprintf("Error while running client: %v", err), slog.Any("err", err))
 	}
-
 	logger.Info("janitor-bot is shutting down")
 }

@@ -115,6 +115,7 @@ func NewDiscordClient(options ClientOptions) *Client {
 	client := Client{
 		options:           options,
 		loadingCh:         make(chan struct{}),
+		errorCh:           make(chan error),
 		unavailableGuilds: make(map[string]struct{}),
 		guilds:            make(map[string]Guild),
 		voiceJoinSessions: make(map[string]voiceUpdateSession),
@@ -185,8 +186,17 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 	return nil
 }
 
-func (d *Client) Error() <-chan error {
-	return d.errorCh
+func (d *Client) BlockUntilDone() error {
+	if !d.isRunning {
+		return fmt.Errorf("discord client is not running")
+	}
+
+	select {
+	case <-d.ctx.Done():
+		return nil
+	case err := <-d.errorCh:
+		return err
+	}
 }
 
 func (d *Client) Guilds() []Guild {
