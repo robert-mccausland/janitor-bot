@@ -63,14 +63,22 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	}
 
 	go func() {
-		for {
-			timeout := time.Hour * (time.Duration(rand.Float64()*6) + 3)
-			select {
-			case <-time.After(timeout):
-			case <-ctx.Done():
-				return
-			}
+		getTimeout := func() time.Duration {
+			minSweepInterval := 3 * time.Hour
+			maxSweepInterval := 9 * time.Hour
+			jitter := time.Duration(rand.Int63n(int64(maxSweepInterval - minSweepInterval)))
+			timeout := minSweepInterval + jitter
+			return timeout
+		}
 
+		timeout := time.Duration(rand.Int63n(int64(getTimeout())))
+		select {
+		case <-time.After(timeout):
+		case <-ctx.Done():
+			return
+		}
+
+		for {
 			channel := office
 			if rand.Intn(2) == 0 {
 				channel = defaultChannel
@@ -78,6 +86,12 @@ func Janate(c *discord.Client, ctx context.Context) error {
 			err := sweepChannel(c, channel)
 			if err != nil {
 				logger.Error(fmt.Sprintf("error while sweeping channel: %v", err), slog.Any("err", err))
+			}
+
+			select {
+			case <-time.After(getTimeout()):
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
