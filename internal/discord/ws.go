@@ -113,7 +113,7 @@ func (d *Client) startNewWebsocketClient(previousError error) error {
 	if previousError == nil {
 	} else if closeError, ok := previousError.(*websocket.CloseError); ok {
 		switch closeError.Code {
-		case 4000, 4001, 4002, 4005, 4008:
+		case 1006, 4000, 4001, 4002, 4005, 4008:
 			logger.Warn(fmt.Sprintf("Websocket closed with code %d, reconnecting", closeError.Code), slog.Int("ws_code", closeError.Code))
 		case 4003, 4007, 4009:
 			logger.Warn(fmt.Sprintf("Websocket closed with code %d, reconnecting with new session", closeError.Code), slog.Int("ws_code", closeError.Code))
