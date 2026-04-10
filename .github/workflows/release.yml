@@ -26,6 +26,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     outputs: 
       environment: ${{ env.ENVIRONMENT }}
       metaJson: ${{ steps.meta.outputs.json }}
