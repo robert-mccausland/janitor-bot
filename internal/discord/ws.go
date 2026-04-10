@@ -77,7 +77,7 @@ type websocketClient struct {
 	ctx                     context.Context
 	connection              *websocket.Conn
 	lastHeartbeatSentAt     atomic.Int64
-	lastHeartbeatRecievedAt atomic.Int64
+	lastHeartbeatReceivedAt atomic.Int64
 	isGreeted               bool
 
 	readyCh chan struct{}
@@ -266,7 +266,7 @@ func (wc *websocketClient) runEventLoop() error {
 				logger.Error(fmt.Sprintf("Error while handling event: %v", err), slog.Any("error", err))
 			}
 		case 7:
-			logger.Warn("Recieved reconnect message from gateway, reconnecting to websocket server...")
+			logger.Warn("Received reconnect message from gateway, reconnecting to websocket server...")
 			err := wc.connection.Close()
 			return err
 		case 9:
@@ -277,10 +277,10 @@ func (wc *websocketClient) runEventLoop() error {
 			}
 
 			if !resumable {
-				logger.Warn("Recieved invalid session message from gateway, reconnecting to websocket server with new session...")
+				logger.Warn("Received invalid session message from gateway, reconnecting to websocket server with new session...")
 				wc.client.sessionID = nil
 			} else {
-				logger.Warn("Recieved invalid session event from gateway, reconnecting to websocket server...")
+				logger.Warn("Received invalid session event from gateway, reconnecting to websocket server...")
 			}
 
 			err = wc.connection.Close()
@@ -291,7 +291,7 @@ func (wc *websocketClient) runEventLoop() error {
 				break
 			}
 
-			logger.Info("Recieved hello message from gateway")
+			logger.Info("Received hello message from gateway")
 
 			var helloMessage helloMessage
 			err := json.Unmarshal(payload.Data, &helloMessage)
@@ -303,10 +303,10 @@ func (wc *websocketClient) runEventLoop() error {
 			go wc.runHeartbeatLoop(helloMessage.HeartbeatInterval)
 		case 11:
 			now := time.Now()
-			wc.lastHeartbeatRecievedAt.Store(now.UnixNano())
+			wc.lastHeartbeatReceivedAt.Store(now.UnixNano())
 
 			if wc.lastHeartbeatSentAt.Load() == 0 {
-				logger.Warn("Heartbeat response recieved before any heartbeats were sent")
+				logger.Warn("Heartbeat response received before any heartbeats were sent")
 				break
 			}
 
@@ -316,7 +316,7 @@ func (wc *websocketClient) runEventLoop() error {
 			}
 
 		default:
-			logger.Error(fmt.Sprintf("Recieved an unrecognized Opcode from the gateway: %d", payload.Opcode), slog.Int("opcode", payload.Opcode))
+			logger.Error(fmt.Sprintf("Received an unrecognized Opcode from the gateway: %d", payload.Opcode), slog.Int("opcode", payload.Opcode))
 		}
 	}
 }
@@ -334,9 +334,9 @@ func (wc *websocketClient) runHeartbeatLoop(intervalMilliseconds int) {
 	ticker := time.NewTicker(interval)
 	for {
 		sentNano := wc.lastHeartbeatSentAt.Load()
-		recvNano := wc.lastHeartbeatRecievedAt.Load()
+		recvNano := wc.lastHeartbeatReceivedAt.Load()
 		if sentNano != 0 && (recvNano == 0 || sentNano > recvNano) {
-			logger.Warn("No heartbeat recieved after previous heartbeat was sent")
+			logger.Warn("No heartbeat received after previous heartbeat was sent")
 		}
 
 		var data any = wc.client.lastSequenceNumber.Load()
@@ -378,7 +378,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		return fmt.Errorf("expected event to contain a sequence number")
 	}
 
-	logger.Info(fmt.Sprintf("Recieved event message from gateway, event name: %s", *payload.EventName), slog.String("event_name", *payload.EventName))
+	logger.Info(fmt.Sprintf("Received event message from gateway, event name: %s", *payload.EventName), slog.String("event_name", *payload.EventName))
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
 

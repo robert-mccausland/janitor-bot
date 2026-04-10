@@ -131,7 +131,7 @@ func openOffice(c *discord.Client, office *discord.Channel) error {
 	logger.Info("Opening office", slog.String("channel_id", office.ID))
 	err := c.DeleteChannelPermissions(office.ID, office.GuildID)
 	if err != nil {
-		return fmt.Errorf("failed to edit permisions to open office: %w", err)
+		return fmt.Errorf("failed to edit permission to open office: %w", err)
 	}
 
 	return nil
@@ -140,7 +140,7 @@ func openOffice(c *discord.Client, office *discord.Channel) error {
 func closeOffice(c *discord.Client, office *discord.Channel, defaultChannel *discord.Channel) error {
 	logger.Info("Closing office", slog.String("channel_id", office.ID), slog.String("default_channel_id", defaultChannel.ID))
 
-	// Its important to give the janitor spesific permissions to join the channel, as tje janitor will be unable to grant it
+	// Its important to give the janitor specific permissions to join the channel, as the janitor will be unable to grant it
 	// again if it doesn't have the permission and removing the join permission from the everyone group will do this.
 	err := c.EditChannelPermissions(office.ID, discord.PermissionOverwrite{
 		ID:    c.User().ID,

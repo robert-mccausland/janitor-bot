@@ -202,9 +202,9 @@ func (d *Client) doRequest(method, endpoint string, body any, responseValue any)
 	if resp.StatusCode >= 400 {
 		var apiError discordAPIError
 		if err := json.NewDecoder(resp.Body).Decode(&apiError); err != nil {
-			return fmt.Errorf("recieved status code %d from discord api (could not decode error)", resp.StatusCode)
+			return fmt.Errorf("received status code %d from discord api (could not decode error)", resp.StatusCode)
 		}
-		return fmt.Errorf("recieved error from discord api: %s (%d)", apiError.Message, apiError.Code)
+		return fmt.Errorf("received error from discord api: %s (%d)", apiError.Message, apiError.Code)
 	}
 
 	if responseValue != nil {

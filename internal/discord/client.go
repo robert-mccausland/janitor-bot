@@ -163,7 +163,7 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 				case <-time.After(d.options.StatusLogInterval):
 				}
 
-				lastHeartbeatReceived := time.Unix(0, d.wc.lastHeartbeatRecievedAt.Load()).UTC().Format(time.RFC3339)
+				lastHeartbeatReceived := time.Unix(0, d.wc.lastHeartbeatReceivedAt.Load()).UTC().Format(time.RFC3339)
 				lastHeartbeatSend := time.Unix(0, d.wc.lastHeartbeatSentAt.Load()).UTC().Format(time.RFC3339)
 				lastSequenceNumber := d.lastSequenceNumber.Load()
 				sessionID := ""
@@ -172,9 +172,9 @@ func (d *Client) Start(ctx context.Context, token string, intents Intent) error 
 				}
 
 				logger.Info(fmt.Sprintf(
-					"Discord client status: heartbeatRecievedAt: %s, heartbeatSentAt: %s, sequenceNumber: %d, sessionId: %s",
+					"Discord client status: heartbeatReceivedAt: %s, heartbeatSentAt: %s, sequenceNumber: %d, sessionId: %s",
 					lastHeartbeatReceived, lastHeartbeatSend, lastSequenceNumber, sessionID),
-					slog.String("heartbeatRecievedAt", lastHeartbeatReceived),
+					slog.String("heartbeatReceivedAt", lastHeartbeatReceived),
 					slog.String("heartbeatSentAt", lastHeartbeatReceived),
 					slog.Int64("sequenceNumber", lastSequenceNumber),
 					slog.String("sessionId", sessionID),

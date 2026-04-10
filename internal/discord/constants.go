@@ -43,11 +43,11 @@ const (
 		IntentAutoModerationConfiguration |
 		IntentAutoModerationExecution
 
-	IntentsPriviliged = IntentGuildMembers |
+	IntentsPrivileged = IntentGuildMembers |
 		IntentGuildPresences |
 		IntentMessageContent
 
-	IntentsAll = IntentsStandard | IntentsPriviliged
+	IntentsAll = IntentsStandard | IntentsPrivileged
 
 	IntentsNone Intent = 0
 )
