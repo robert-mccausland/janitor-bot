@@ -378,7 +378,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		return fmt.Errorf("expected event to contain a sequence number")
 	}
 
-	logger.Info(fmt.Sprintf("Recieved event message from gateway, event name: %s", *payload.EventName))
+	logger.Info(fmt.Sprintf("Recieved event message from gateway, event name: %s", *payload.EventName), slog.String("event_name", *payload.EventName))
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
 
@@ -485,9 +485,6 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			session.voiceServerCh <- voiceServer
 		}
 		d.voiceMu.Unlock()
-
-	default:
-		logger.Warn(fmt.Sprintf("Recieved unimplemented event: %s", *payload.EventName))
 	}
 
 	return nil
