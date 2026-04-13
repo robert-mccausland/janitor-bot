@@ -109,11 +109,43 @@ func (d *Client) ModifyGuildMember(guildID string, userID string, update GuildMe
 }
 
 type SoundboardSound struct {
+	Name      string
+	SoundID   string
+	Volume    float64
+	EmojiID   string
+	EmojiName string
+	GuildID   *string
+	Available bool
+}
+
+func (d *Client) GetSoundboardSounds(guildID string) (*[]SoundboardSound, error) {
+	if d.Guild(guildID) == nil {
+		return nil, fmt.Errorf("could not find guild with ID: %s", guildID)
+	}
+
+	var response struct {
+		Items []soundboardSoundObject `json:"items"`
+	}
+
+	err := d.doRequest("GET", fmt.Sprintf("/guilds/%s/soundboard-sounds", guildID), nil, &response)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get soundboard sounds for guild %s: %v", guildID, err)
+	}
+
+	sounds := make([]SoundboardSound, len(response.Items))
+	for i, s := range response.Items {
+		sounds[i] = s.ToSoundboardSound()
+	}
+
+	return &sounds, nil
+}
+
+type SendSoundboardSound struct {
 	SoundID       string
 	SourceGuildID *string
 }
 
-func (d *Client) SendSoundboardSound(channelID string, sound SoundboardSound) error {
+func (d *Client) SendSoundboardSound(channelID string, sound SendSoundboardSound) error {
 	body := struct {
 		SoundID       string  `json:"sound_id"`
 		SourceGuildID *string `json:"source_guild_id,omitempty"`

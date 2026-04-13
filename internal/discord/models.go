@@ -126,3 +126,25 @@ type voiceServerObject struct {
 	GuildID  string `json:"guild_id"`
 	Endpoint string `json:"endpoint"`
 }
+
+type soundboardSoundObject struct {
+	Name      string  `json:"name"`
+	SoundID   string  `json:"sound_id"`
+	Volume    float64 `json:"volume"`
+	EmojiID   string  `json:"emoji_id"`
+	EmojiName string  `json:"emoji_name"`
+	GuildID   *string `json:"guild_id"`
+	Available bool    `json:"available"`
+}
+
+func (ss *soundboardSoundObject) ToSoundboardSound() SoundboardSound {
+	return SoundboardSound{
+		Name:      ss.Name,
+		SoundID:   ss.SoundID,
+		Volume:    ss.Volume,
+		EmojiID:   ss.EmojiID,
+		EmojiName: ss.EmojiName,
+		GuildID:   ss.GuildID,
+		Available: ss.Available,
+	}
+}

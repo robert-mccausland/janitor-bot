@@ -116,13 +116,21 @@ func sweepChannel(c *discord.Client, channel *discord.Channel) error {
 	}()
 
 	<-time.After(time.Second * 1)
-	if rand.Intn(2) == 0 {
+
+	sounds, err := c.GetSoundboardSounds(channel.GuildID)
+	if err != nil {
+		return fmt.Errorf("failed to find soundboard sounds: %v", err)
+	}
+
+	if len(*sounds) != 0 {
+		chosenSound := (*sounds)[rand.Intn(len(*sounds))]
 		logger.Info("Fling it now!")
-		err = playSound(c, channel, SoundConfig{SoundID: "1452798245351854332"})
+		err = playSound(c, channel, SoundConfig{SoundID: chosenSound.SoundID, Duration: 1 * time.Second})
 		if err != nil {
 			return fmt.Errorf("failed to play sweep sound: %w", err)
 		}
 	}
+
 	<-time.After(time.Second * time.Duration(rand.Intn(7)+3))
 	return nil
 }
@@ -224,7 +232,7 @@ type SoundConfig struct {
 }
 
 func playSound(c *discord.Client, channel *discord.Channel, data SoundConfig) error {
-	err := c.SendSoundboardSound(channel.ID, discord.SoundboardSound{SoundID: data.SoundID})
+	err := c.SendSoundboardSound(channel.ID, discord.SendSoundboardSound{SoundID: data.SoundID})
 	if err != nil {
 		return err
 	}
