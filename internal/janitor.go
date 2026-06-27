@@ -38,6 +38,14 @@ func Janate(c *discord.Client, ctx context.Context) error {
 		return fmt.Errorf("invalid timezone provided: %s", timezoneName)
 	}
 
+	repositoryOptions := RepositoryOptions{
+		dbPath: os.Getenv("DB_PATH"),
+	}
+	repo, err := NewRepository(repositoryOptions)
+	if err != nil {
+		return fmt.Errorf("failed to create repository: %v", err)
+	}
+
 	cron := cron.New(cron.WithLocation(timezone))
 
 	_, err = cron.AddFunc("00 17 * * 1-5", func() {
@@ -58,9 +66,83 @@ func Janate(c *discord.Client, ctx context.Context) error {
 			logger.Error("error while opening the office: %v", slog.Any("err", err))
 		}
 	})
+
 	if err != nil {
 		return err
 	}
+
+	_, err = cron.AddFunc("00 06 * * *", func() {
+
+	})
+
+	go func() {
+		START_HOUR := 6
+		// Avoid running very close to midnight as delays could cause the run to finish after midnight.
+		END_BUFFER_SECONDS := 30
+
+		lastRun, err := repo.GetLastMessageSent()
+		if err != nil {
+			logger.Error("Error while fetching last message sent: %v", slog.Any("err", err))
+		}
+
+		for {
+			runStart := time.Now().In(timezone)
+			var windowStart time.Time
+			if lastRun == nil {
+				windowStart = time.Date(runStart.Year(), runStart.Month(), runStart.Day(), START_HOUR, 0, 0, 0, timezone)
+			} else {
+				windowStart = time.Date(lastRun.Year(), lastRun.Month(), lastRun.Day(), START_HOUR, 0, 0, 0, timezone).AddDate(0, 0, 1)
+			}
+
+			nextDayStart := time.Date(windowStart.Year(), windowStart.Month(), windowStart.Day(), 0, 0, 0, 0, timezone).AddDate(0, 0, 1)
+			windowEnd := nextDayStart.Add(-time.Duration(END_BUFFER_SECONDS) * time.Second)
+
+			logger.Info(fmt.Sprintf("Preparing plank's reckoning... Window Start: %v, Window End: %v\n", windowStart, windowEnd),
+				slog.Time("window_start", windowStart),
+				slog.Time("window_end", windowEnd),
+			)
+
+			waitTime := time.Until(windowStart)
+			if waitTime > 0 {
+				logger.Info(fmt.Sprint("Waiting for window start at: ", windowStart))
+				select {
+				case <-time.After(waitTime):
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			window := time.Until(windowEnd)
+			if window <= 0 {
+				logger.Info("Looks like the window is already closed, skipping for today",
+					slog.Time("window_start", windowStart),
+					slog.Time("window_end", windowEnd),
+				)
+
+				// Set this to the end of the window so that we don't try to run again until the next day to avoid a tight loop.
+				lastRun = &windowEnd
+				continue
+			}
+
+			timeout := time.Duration(rand.Int63n(int64(window)))
+			logger.Info(fmt.Sprintf("Waiting for %v before doing planks reckoning", timeout), slog.Duration("timeout", timeout))
+			select {
+			case <-time.After(timeout):
+			case <-ctx.Done():
+				return
+			}
+
+			if err := planksReckoning(c); err != nil {
+				logger.Error("error while doing planks reckoning", slog.Any("err", err))
+			}
+
+			now := time.Now().In(timezone)
+			lastRun = &now
+			if err := repo.SetLastMessageSent(now); err != nil {
+				logger.Error("Error while setting last message sent: %v", slog.Any("err", err))
+			}
+		}
+	}()
 
 	go func() {
 		getTimeout := func() time.Duration {
@@ -79,11 +161,7 @@ func Janate(c *discord.Client, ctx context.Context) error {
 		}
 
 		for {
-			channel := office
-			if rand.Intn(2) == 0 {
-				channel = defaultChannel
-			}
-			err := sweepChannel(c, channel)
+			err := sweepChannel(c, defaultChannel)
 			if err != nil {
 				logger.Error(fmt.Sprintf("error while sweeping channel: %v", err), slog.Any("err", err))
 			}
@@ -101,8 +179,63 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	return nil
 }
 
-func sweepChannel(c *discord.Client, channel *discord.Channel) error {
-	logger.Info("Sweeping channel", slog.String("channel_id", channel.ID))
+func planksReckoning(c *discord.Client) error {
+	logger.Info("Planks reckoning")
+
+	arsenalChampionsDate, err := time.Parse("2006-01-02", os.Getenv("ARSENAL_CHAMPIONS_DATE"))
+	if err != nil {
+		return fmt.Errorf("invalid ARSENAL_CHAMPIONS_DATE environment variable: %v", err)
+	}
+	planksId := os.Getenv("PLANKS_ID")
+	channelId := os.Getenv("FOOTBALL_CHANNEL_ID")
+
+	daysSinceChampions := int(time.Since(arsenalChampionsDate).Hours() / 24)
+	celebratoryMessage := fmt.Sprintf("Daily update: <@%s> is has been %d days since ARSENAL became CHAMPIONS OF ENGLAND.", planksId, daysSinceChampions)
+
+	err = c.CreateMessage(channelId, discord.Message{Content: celebratoryMessage})
+	if err != nil {
+		return fmt.Errorf("failed to post celebratory message: %v", err)
+	}
+
+	return nil
+}
+
+func sweepChannel(c *discord.Client, defaultChannel *discord.Channel) error {
+	logger.Info("Sweeping channel", slog.String("default_channel_id", defaultChannel.ID))
+
+	states := c.Guild(defaultChannel.GuildID).VoiceStates
+	vcMap := map[string]struct{}{}
+	for id := range states {
+		channelID := states[id].ChannelID
+		if channelID != nil {
+			vcMap[*channelID] = struct{}{}
+		}
+	}
+
+	var voiceChannels []string
+	if len(vcMap) == 0 {
+		channels, err := c.GetChannels(defaultChannel.GuildID)
+		if err != nil {
+			return fmt.Errorf("failed to get channels: %v", err)
+		}
+
+		for _, c := range *channels {
+			if c.Type == discord.ChannelTypeGuildVoice {
+				voiceChannels = append(voiceChannels, c.ID)
+			}
+		}
+	} else {
+		voiceChannels = make([]string, 0, len(vcMap))
+		for id := range vcMap {
+			voiceChannels = append(voiceChannels, id)
+		}
+	}
+
+	index := rand.Intn(len(voiceChannels))
+	channel, err := c.GetChannel(voiceChannels[index])
+	if err != nil {
+		return fmt.Errorf("failed to get channel: %v", err)
+	}
 
 	vc, err := c.JoinVoiceChannel(channel.GuildID, channel.ID, false, false)
 	if err != nil {

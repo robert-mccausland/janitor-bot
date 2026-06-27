@@ -10,9 +10,16 @@ services:
       VERSION: ${VERSION}
       OFFICE_CHANNEL_ID: "1443583282443845834"
       DEFAULT_CHANNEL_ID: "1291056400289632369"
+      ARSENAL_CHAMPIONS_DATE: "2026-05-19"
+      PLANKS_ID: "304355361287045122"
+      FOOTBALL_CHANNEL_ID: "1505599253287010344"
       TIMEZONE: "Europe/London"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://grafana-alloy:4317"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      DB_PATH: "/data/janitor-bot.db"
+
+    volumes:
+      - janitor-bot-data:/data
 
     networks:
      - shared-network
@@ -21,3 +28,7 @@ networks:
   shared-network:
     external: true
     name: shared-network
+
+volumes:
+  janitor-bot-data:
+    driver: local

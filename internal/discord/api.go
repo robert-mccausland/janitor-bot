@@ -41,6 +41,23 @@ func (d *Client) GetChannel(channelID string) (*Channel, error) {
 	return &channel, nil
 }
 
+type Message struct {
+	Content string
+}
+
+func (d *Client) CreateMessage(channelID string, message Message) error {
+	body := struct {
+		Content string `json:"content"`
+	}(message)
+
+	err := d.doRequest("POST", fmt.Sprintf("/channels/%s/messages", channelID), body, nil)
+	if err != nil {
+		return fmt.Errorf("unable to post message to channel %s: %w", channelID, err)
+	}
+
+	return nil
+}
+
 func (d *Client) EditChannelPermissions(channelID string, overwrite PermissionOverwrite) error {
 	body := struct {
 		Allow Permission              `json:"allow"`
