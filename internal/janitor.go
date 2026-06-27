@@ -71,10 +71,6 @@ func Janate(c *discord.Client, ctx context.Context) error {
 		return err
 	}
 
-	_, err = cron.AddFunc("00 06 * * *", func() {
-
-	})
-
 	go func() {
 		START_HOUR := 6
 		// Avoid running very close to midnight as delays could cause the run to finish after midnight.
