@@ -16,10 +16,10 @@ services:
       TIMEZONE: "Europe/London"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://grafana-alloy:4317"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
-      DB_PATH: "/data/janitor-bot.db"
+      DB_PATH: "/var/lib/janitor-bot/data/janitor-bot.db"
 
     volumes:
-      - janitor-bot-data:/data
+      - janitor-bot-data:/var/lib/janitor-bot/data
 
     networks:
      - shared-network
