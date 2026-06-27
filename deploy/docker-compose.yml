@@ -1,19 +1,9 @@
 version: '3.8'
 
 services:
-  init-volume:
-    image: alpine:3.22
-    command: sh -c "mkdir -p /var/lib/janitor-bot/data && chown -R 1000:1000 /var/lib/janitor-bot/data"
-
-    volumes:
-      - janitor-bot-data:/var/lib/janitor-bot/data
-
   janitor-bot:
     image: ghcr.io/robert-mccausland/janitor-bot:${VERSION}
     restart: unless-stopped 
-    depends_on:
-      init-volume:
-        condition: service_completed_successfully
     
     environment:
       ENVIRONMENT: ${ENVIRONMENT}
@@ -42,4 +32,5 @@ networks:
 
 volumes:
   janitor-bot-data:
-    driver: local
+    external: true
+    name: janitor-bot_janitor-bot-data
