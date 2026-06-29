@@ -186,7 +186,7 @@ func planksReckoning(c *discord.Client) error {
 	channelId := os.Getenv("FOOTBALL_CHANNEL_ID")
 
 	daysSinceChampions := int(time.Since(arsenalChampionsDate).Hours() / 24)
-	celebratoryMessage := fmt.Sprintf("Daily update: <@%s> is has been %d days since ARSENAL became CHAMPIONS OF ENGLAND.", planksId, daysSinceChampions)
+	celebratoryMessage := fmt.Sprintf("Daily update: <@%s> it has been %d days since ARSENAL became CHAMPIONS OF ENGLAND.", planksId, daysSinceChampions)
 
 	err = c.CreateMessage(channelId, discord.Message{Content: celebratoryMessage})
 	if err != nil {
