@@ -41,6 +41,8 @@ type Client struct {
 
 	voiceMu           sync.RWMutex
 	voiceJoinSessions map[string]voiceUpdateSession
+
+	emitter *EventEmitter[GatewayEventName]
 }
 
 type ClientOptions struct {
@@ -126,6 +128,7 @@ func NewDiscordClient(options ClientOptions) *Client {
 				IdleConnTimeout: options.HttpIdleConnectionTimeout,
 			},
 		},
+		emitter: NewEventEmitter[GatewayEventName](),
 	}
 
 	return &client
@@ -244,4 +247,8 @@ func (d *Client) User() *User {
 
 	user := d.user.ToUser()
 	return &user
+}
+
+func (d *Client) On(eventName GatewayEventName, handler EventHandler) Unsubscriber {
+	return d.emitter.On(eventName, handler)
 }

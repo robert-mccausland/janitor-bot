@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/robert-mccausland/janitor-bot/internal/discord"
@@ -170,6 +171,20 @@ func Janate(c *discord.Client, ctx context.Context) error {
 		}
 	}()
 
+	mu := sync.Mutex{}
+	c.On(discord.EventVoiceStateUpdate, func() error {
+		if mu.TryLock() {
+			go func() {
+				err := checkChannels(c, office, timezone)
+				if err != nil {
+					logger.Error(fmt.Sprintf("error while checking channels: %v", err), slog.Any("err", err))
+				}
+				defer mu.Unlock()
+			}()
+		}
+		return nil
+	})
+
 	cron.Start()
 
 	return nil
@@ -304,19 +319,76 @@ func closeOffice(c *discord.Client, office *discord.Channel, defaultChannel *dis
 		return fmt.Errorf("office guild not found: %s", office.GuildID)
 	}
 
-	var inOffice []discord.VoiceState
-	for _, vs := range guild.VoiceStates {
-		if vs.ChannelID != nil && *vs.ChannelID == office.ID {
-			inOffice = append(inOffice, vs)
-		}
+	err = moveUsers(c, office, defaultChannel)
+	if err != nil {
+		return fmt.Errorf("failed to move users from office to default channel: %v", err)
 	}
 
-	if len(inOffice) == 0 {
+	return nil
+}
+
+func checkChannels(c *discord.Client, office *discord.Channel, timezone *time.Location) error {
+	logger.Info("Checking channels to see if current users are in the correct place")
+
+	now := time.Now().In(timezone)
+	weekday := now.Weekday()
+	if weekday < time.Monday || weekday > time.Friday {
 		return nil
 	}
 
-	logger.Info("Moving people out of the office office", slog.String("channel_id", office.ID), slog.String("default_channel_id", defaultChannel.ID))
-	vc, err := c.JoinVoiceChannel(office.GuildID, office.ID, false, false)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, timezone)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 16, 30, 0, 0, timezone)
+	if now.Before(start) || now.After(end) {
+		return nil
+	}
+
+	// Wait for 5 to 10 minutes before moving anyone.
+	waitTime := time.Duration(rand.Intn(5)+5) * time.Minute
+	logger.Info(fmt.Sprintf("Its the correct time to check channels, waiting for %v before moving users.", waitTime))
+	time.Sleep(waitTime)
+
+	channels, err := c.GetChannels(office.GuildID)
+	if err != nil {
+		return fmt.Errorf("failed to get channels: %v", err)
+	}
+
+	for _, channel := range *channels {
+		if channel.Type != discord.ChannelTypeGuildVoice {
+			continue
+		}
+
+		if channel.ID == office.ID {
+			continue
+		}
+
+		err = moveUsers(c, &channel, office)
+		if err != nil {
+			return fmt.Errorf("failed to move users from %s to office: %v", channel.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func moveUsers(c *discord.Client, fromChannel *discord.Channel, toChannel *discord.Channel) error {
+	guild := c.Guild(fromChannel.GuildID)
+	if guild == nil {
+		return fmt.Errorf("guild not found: %s", fromChannel.GuildID)
+	}
+
+	var usersToMove []discord.VoiceState
+	for _, vs := range guild.VoiceStates {
+		if vs.ChannelID != nil && *vs.ChannelID == fromChannel.ID {
+			usersToMove = append(usersToMove, vs)
+		}
+	}
+
+	if len(usersToMove) == 0 {
+		return nil
+	}
+
+	logger.Info("Moving people between channels", slog.String("from_channel_id", fromChannel.ID), slog.String("to_channel_id", toChannel.ID))
+	vc, err := c.JoinVoiceChannel(fromChannel.GuildID, fromChannel.ID, false, false)
 	if err != nil {
 		return fmt.Errorf("failed to join voice channel: %v", err)
 	}
@@ -328,26 +400,26 @@ func closeOffice(c *discord.Client, office *discord.Channel, defaultChannel *dis
 		}
 	}()
 
-	err = playSound(c, office, SoundConfig{SoundID: "1223777210650067056", Duration: 2 * time.Second})
+	err = playSound(c, fromChannel, SoundConfig{SoundID: "1223777210650067056", Duration: 2 * time.Second})
 	if err != nil {
 		return fmt.Errorf("failed to play joining sound: %w", err)
 	}
 
-	for _, vs := range inOffice {
-		err := c.ModifyGuildMember(office.GuildID, vs.UserID, discord.GuildMemberUpdate{
-			ChannelID: &defaultChannel.ID,
+	for _, vs := range usersToMove {
+		err := c.ModifyGuildMember(guild.ID, vs.UserID, discord.GuildMemberUpdate{
+			ChannelID: &toChannel.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("error moving user %s: %v", vs.UserID, err)
 		}
 	}
 
-	err = vc.ChangeChannel(defaultChannel.ID, false, false)
+	err = vc.ChangeChannel(toChannel.ID, false, false)
 	if err != nil {
 		return fmt.Errorf("failed to switch channels: %v", err)
 	}
 
-	err = playSound(c, defaultChannel, SoundConfig{SoundID: "1449829431693672641", Duration: 1 * time.Second})
+	err = playSound(c, toChannel, SoundConfig{SoundID: "1449829431693672641", Duration: 1 * time.Second})
 	if err != nil {
 		return fmt.Errorf("failed to play leaving sound: %v", err)
 	}

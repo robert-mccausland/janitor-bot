@@ -134,3 +134,16 @@ const (
 	PermissionPinMessages                      Permission = 1 << 51
 	PermissionBypassSlowmode                   Permission = 1 << 52
 )
+
+// https://discord.com/developers/docs/topics/gateway-events#receive-events
+type GatewayEventName string
+
+const (
+	EventReady             GatewayEventName = "READY"
+	EventResumed           GatewayEventName = "RESUMED"
+	EventGuildCreate       GatewayEventName = "GUILD_CREATE"
+	EventGuildUpdate       GatewayEventName = "GUILD_UPDATE"
+	EventGuildDelete       GatewayEventName = "GUILD_DELETE"
+	EventVoiceStateUpdate  GatewayEventName = "VOICE_STATE_UPDATE"
+	EventVoiceServerUpdate GatewayEventName = "VOICE_SERVER_UPDATE"
+)

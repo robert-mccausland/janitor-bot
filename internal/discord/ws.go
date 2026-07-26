@@ -16,10 +16,10 @@ import (
 )
 
 type gatewayPayload struct {
-	Opcode         int             `json:"op"`
-	Data           json.RawMessage `json:"d"`
-	SequenceNumber *int64          `json:"s"`
-	EventName      *string         `json:"t"`
+	Opcode         int               `json:"op"`
+	Data           json.RawMessage   `json:"d"`
+	SequenceNumber *int64            `json:"s"`
+	EventName      *GatewayEventName `json:"t"`
 }
 
 func createPayload(op int, message any) (gatewayPayload, error) {
@@ -378,16 +378,16 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		return fmt.Errorf("expected event to contain a sequence number")
 	}
 
-	logger.Info(fmt.Sprintf("Received event message from gateway, event name: %s", *payload.EventName), slog.String("event_name", *payload.EventName))
+	logger.Info(fmt.Sprintf("Received event message from gateway, event name: %s", *payload.EventName), slog.String("event_name", string(*payload.EventName)))
 
 	d.lastSequenceNumber.Store(*payload.SequenceNumber)
 
 	switch *payload.EventName {
-	case "READY":
+	case EventReady:
 		var readyMessage readyMessage
 		err := json.Unmarshal(payload.Data, &readyMessage)
 		if err != nil {
-			return fmt.Errorf("unable to unmarshal ready message: %v", err)
+			return fmt.Errorf("unable to unmarshal ready message: %w", err)
 		}
 		d.user = &readyMessage.User
 		d.resumeURL = &readyMessage.ResumeURL
@@ -404,10 +404,10 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			close(d.loadingCh)
 		}
 
-	case "RESUMED":
+	case EventResumed:
 		close(d.wc.readyCh)
 
-	case "GUILD_CREATE":
+	case EventGuildCreate:
 		var guild guildObject
 		err := json.Unmarshal(payload.Data, &guild)
 		if err != nil {
@@ -423,7 +423,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			close(d.loadingCh)
 		}
 
-	case "GUILD_UPDATE":
+	case EventGuildUpdate:
 		var guild guildObject
 		err := json.Unmarshal(payload.Data, &guild)
 		if err != nil {
@@ -434,7 +434,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		d.guilds[guild.ID] = guild.ToGuild()
 		d.mu.Unlock()
 
-	case "GUILD_DELETE":
+	case EventGuildDelete:
 		var g struct {
 			ID string `json:"id"`
 		}
@@ -447,7 +447,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		delete(d.guilds, g.ID)
 		d.mu.Unlock()
 
-	case "VOICE_STATE_UPDATE":
+	case EventVoiceStateUpdate:
 		var voiceState voiceStateObject
 		err := json.Unmarshal(payload.Data, &voiceState)
 		if err != nil {
@@ -473,7 +473,7 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		}
 		d.mu.Unlock()
 
-	case "VOICE_SERVER_UPDATE":
+	case EventVoiceServerUpdate:
 		var voiceServer voiceServerObject
 		err := json.Unmarshal(payload.Data, &voiceServer)
 		if err != nil {
@@ -485,7 +485,12 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			session.voiceServerCh <- voiceServer
 		}
 		d.voiceMu.Unlock()
+
+	default:
+		logger.Warn(fmt.Sprintf("Received unhandled event: %s", *payload.EventName), slog.String("event_name", string(*payload.EventName)))
 	}
+
+	d.emitter.Emit(*payload.EventName)
 
 	return nil
 }
