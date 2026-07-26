@@ -486,6 +486,9 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 		}
 		d.voiceMu.Unlock()
 
+	case EventVoiceChannelStartTimeUpdate:
+		// Not Implemented
+
 	default:
 		logger.Warn(fmt.Sprintf("Received unhandled event: %s", *payload.EventName), slog.String("event_name", string(*payload.EventName)))
 	}

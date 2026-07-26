@@ -139,11 +139,12 @@ const (
 type GatewayEventName string
 
 const (
-	EventReady             GatewayEventName = "READY"
-	EventResumed           GatewayEventName = "RESUMED"
-	EventGuildCreate       GatewayEventName = "GUILD_CREATE"
-	EventGuildUpdate       GatewayEventName = "GUILD_UPDATE"
-	EventGuildDelete       GatewayEventName = "GUILD_DELETE"
-	EventVoiceStateUpdate  GatewayEventName = "VOICE_STATE_UPDATE"
-	EventVoiceServerUpdate GatewayEventName = "VOICE_SERVER_UPDATE"
+	EventReady                       GatewayEventName = "READY"
+	EventResumed                     GatewayEventName = "RESUMED"
+	EventGuildCreate                 GatewayEventName = "GUILD_CREATE"
+	EventGuildUpdate                 GatewayEventName = "GUILD_UPDATE"
+	EventGuildDelete                 GatewayEventName = "GUILD_DELETE"
+	EventVoiceStateUpdate            GatewayEventName = "VOICE_STATE_UPDATE"
+	EventVoiceServerUpdate           GatewayEventName = "VOICE_SERVER_UPDATE"
+	EventVoiceChannelStartTimeUpdate GatewayEventName = "VOICE_CHANNEL_START_TIME_UPDATE"
 )
