@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -120,7 +121,12 @@ func (c *Holidays) fetch(ctx context.Context) (holidays, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetching bank holidays: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			logger.Error("error closing response body", slog.Any("err", err))
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching bank holidays: unexpected status %s", resp.Status)
