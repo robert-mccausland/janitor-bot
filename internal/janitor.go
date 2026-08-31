@@ -21,6 +21,13 @@ func init() {
 }
 
 func Janate(c *discord.Client, ctx context.Context) error {
+
+	holidays := NewHolidays(DefaultHolidaysConfig())
+	err := holidays.Refresh(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to refresh holidays: %v", err)
+	}
+
 	officeChannelId := os.Getenv("OFFICE_CHANNEL_ID")
 	office, err := c.GetChannel(officeChannelId)
 	if err != nil {
@@ -50,8 +57,17 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	cron := cron.New(cron.WithLocation(timezone))
 
 	_, err = cron.AddFunc("00 17 * * 1-5", func() {
+		holiday, err := holidays.GetHoliday(ctx, time.Now().In(timezone))
+		if err != nil {
+			logger.Error("error while checking for holiday: %v", slog.Any("err", err))
+		}
+		if holiday != nil {
+			logger.Info(fmt.Sprintf("Today is a holiday: %s, skipping closing the office", holiday.Title), slog.String("holiday_title", holiday.Title))
+			return
+		}
+
 		logger.Info("Closing the office")
-		err := closeOffice(c, office, defaultChannel)
+		err = closeOffice(c, office, defaultChannel)
 		if err != nil {
 			logger.Error("error while closing the office: %v", slog.Any("err", err))
 		}
@@ -61,8 +77,17 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	}
 
 	_, err = cron.AddFunc("00 09 * * 1-5", func() {
+		holiday, err := holidays.GetHoliday(ctx, time.Now().In(timezone))
+		if err != nil {
+			logger.Error("error while checking for holiday: %v", slog.Any("err", err))
+		}
+		if holiday != nil {
+			logger.Info(fmt.Sprintf("Today is a holiday: %s, skipping opening the office", holiday.Title), slog.String("holiday_title", holiday.Title))
+			return
+		}
+
 		logger.Info("Opening the office")
-		err := openOffice(c, office)
+		err = openOffice(c, office)
 		if err != nil {
 			logger.Error("error while opening the office: %v", slog.Any("err", err))
 		}
@@ -175,7 +200,7 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	c.On(discord.EventVoiceStateUpdate, func() error {
 		if mu.TryLock() {
 			go func() {
-				err := checkChannels(c, office, timezone)
+				err := checkChannels(c, office, holidays, timezone, ctx)
 				if err != nil {
 					logger.Error(fmt.Sprintf("error while checking channels: %v", err), slog.Any("err", err))
 				}
@@ -327,12 +352,22 @@ func closeOffice(c *discord.Client, office *discord.Channel, defaultChannel *dis
 	return nil
 }
 
-func checkChannels(c *discord.Client, office *discord.Channel, timezone *time.Location) error {
+func checkChannels(c *discord.Client, office *discord.Channel, holidays *Holidays, timezone *time.Location, ctx context.Context) error {
 	logger.Info("Checking channels to see if current users are in the correct place")
 
 	now := time.Now().In(timezone)
 	weekday := now.Weekday()
 	if weekday < time.Monday || weekday > time.Friday {
+		return nil
+	}
+
+	holiday, err := holidays.GetHoliday(ctx, now)
+
+	if err != nil {
+		logger.Error("error while checking for holiday: %v", slog.Any("err", err))
+	}
+	if holiday != nil {
+		logger.Info(fmt.Sprintf("Today is a holiday: %s, skipping checking channels", holiday.Title), slog.String("holiday_title", holiday.Title))
 		return nil
 	}
 
