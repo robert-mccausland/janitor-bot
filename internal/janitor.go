@@ -97,6 +97,21 @@ func Janate(c *discord.Client, ctx context.Context) error {
 		return err
 	}
 
+	shouldBeOpen, err := officeShouldBeOpenNow(ctx, holidays, timezone)
+	if err != nil {
+		logger.Error("error determining office state on startup: %v", slog.Any("err", err))
+	} else if shouldBeOpen {
+		logger.Info("Reconciling office state on startup: should be open")
+		if err := openOffice(c, office); err != nil {
+			logger.Error("error while reconciling office to open on startup: %v", slog.Any("err", err))
+		}
+	} else {
+		logger.Info("Reconciling office state on startup: should be closed")
+		if err := closeOffice(c, office, defaultChannel); err != nil {
+			logger.Error("error while reconciling office to closed on startup: %v", slog.Any("err", err))
+		}
+	}
+
 	go func() {
 		START_HOUR := 6
 		// Avoid running very close to midnight as delays could cause the run to finish after midnight.
@@ -213,6 +228,25 @@ func Janate(c *discord.Client, ctx context.Context) error {
 	cron.Start()
 
 	return nil
+}
+
+func officeShouldBeOpenNow(ctx context.Context, holidays *Holidays, timezone *time.Location) (bool, error) {
+	now := time.Now().In(timezone)
+	if now.Weekday() < time.Monday || now.Weekday() > time.Friday {
+		return false, nil
+	}
+
+	holiday, err := holidays.GetHoliday(ctx, now)
+	if err != nil {
+		return false, err
+	}
+	if holiday != nil {
+		return false, nil
+	}
+
+	open := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, timezone)
+	close := time.Date(now.Year(), now.Month(), now.Day(), 17, 0, 0, 0, timezone)
+	return !now.Before(open) && now.Before(close), nil
 }
 
 func planksReckoning(c *discord.Client) error {
