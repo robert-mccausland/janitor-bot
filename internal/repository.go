@@ -13,11 +13,11 @@ type Repository struct {
 }
 
 type RepositoryOptions struct {
-	dbPath string
+	DBPath string
 }
 
 func NewRepository(options RepositoryOptions) (*Repository, error) {
-	db, err := sql.Open("sqlite", options.dbPath)
+	db, err := sql.Open("sqlite", options.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
