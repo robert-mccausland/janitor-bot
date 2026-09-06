@@ -1,6 +1,7 @@
 package janitor
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -71,10 +72,26 @@ type SoundConfig struct {
 }
 
 func playSound(c *discord.Client, channel *discord.Channel, data SoundConfig) error {
-	err := c.SendSoundboardSound(channel.ID, discord.SendSoundboardSound{SoundID: data.SoundID})
-	if err != nil {
-		return err
+	failures := 0
+	for {
+		err := c.SendSoundboardSound(channel.ID, discord.SendSoundboardSound{SoundID: data.SoundID})
+		if err != nil {
+			var apiError *discord.DiscordAPIError
+			if errors.As(err, &apiError) && apiError.Code == 50168 {
+				failures++
+				if failures >= 3 {
+					return err
+				}
+				logger.Warn(fmt.Sprintf("got error code 50168, retrying in 1 second: %v", apiError), slog.Any("error", err), slog.Int("failures", failures))
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			return err
+		}
+
+		break
 	}
+
 	time.Sleep(data.Duration)
 	return nil
 }

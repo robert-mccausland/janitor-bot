@@ -198,6 +198,16 @@ type discordAPIError struct {
 	Errors  json.RawMessage `json:"errors"`
 }
 
+type DiscordAPIError struct {
+	Message string
+	Code    int
+	Status  int
+}
+
+func (d *DiscordAPIError) Error() string {
+	return fmt.Sprintf("discord API error: %s (code: %d, status: %d)", d.Message, d.Code, d.Status)
+}
+
 func (d *Client) doRequest(method, endpoint string, body any, responseValue any) error {
 	url := d.options.ApiURL + endpoint
 
@@ -253,7 +263,13 @@ func (d *Client) doRequest(method, endpoint string, body any, responseValue any)
 		if err := json.NewDecoder(resp.Body).Decode(&apiError); err != nil {
 			return fmt.Errorf("received status code %d from discord api (could not decode error)", resp.StatusCode)
 		}
-		return fmt.Errorf("received error from discord api: %s (%d)", apiError.Message, apiError.Code)
+
+		discordError := &DiscordAPIError{
+			Message: apiError.Message,
+			Code:    apiError.Code,
+			Status:  resp.StatusCode,
+		}
+		return discordError
 	}
 
 	if responseValue != nil {
