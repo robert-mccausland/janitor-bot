@@ -57,10 +57,8 @@ func GetConfig() (*Config, error) {
 	c.PlanksID = getEnv(c, "PLANKS_ID")
 	c.FootballChannelID = getEnv(c, "FOOTBALL_CHANNEL_ID")
 	c.DiscordToken = getEnv(c, "TOKEN")
+	// Optional: the API is off unless an address is given.
 	c.GRPCAddr = os.Getenv("GRPC_ADDR")
-	if c.GRPCAddr == "" {
-		c.GRPCAddr = ":50051"
-	}
 
 	if len(c.errs) > 0 {
 		return nil, errors.Join(c.errs...)

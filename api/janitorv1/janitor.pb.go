@@ -115,7 +115,7 @@ type MoveMembersRequest struct {
 	FromChannelId string                 `protobuf:"bytes,2,opt,name=from_channel_id,json=fromChannelId,proto3" json:"from_channel_id,omitempty"`
 	// Where to move them; empty disconnects them from voice instead.
 	ToChannelId string `protobuf:"bytes,3,opt,name=to_channel_id,json=toChannelId,proto3" json:"to_channel_id,omitempty"`
-	// Who to move. Only those in from_channel_id are moved; empty moves everyone there.
+	// Who to move (at least one). Only those in from_channel_id are moved.
 	UserIds       []string `protobuf:"bytes,4,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -180,8 +180,11 @@ func (x *MoveMembersRequest) GetUserIds() []string {
 }
 
 type MoveMembersResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MovedUserIds  []string               `protobuf:"bytes,1,rep,name=moved_user_ids,json=movedUserIds,proto3" json:"moved_user_ids,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Who was moved, even if it then failed part-way.
+	MovedUserIds []string `protobuf:"bytes,1,rep,name=moved_user_ids,json=movedUserIds,proto3" json:"moved_user_ids,omitempty"`
+	// Why it stopped part-way; empty if everyone there was moved.
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -221,6 +224,13 @@ func (x *MoveMembersResponse) GetMovedUserIds() []string {
 		return x.MovedUserIds
 	}
 	return nil
+}
+
+func (x *MoveMembersResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 type HoldChannelsRequest struct {
@@ -377,9 +387,10 @@ const file_janitorv1_janitor_proto_rawDesc = "" +
 	"\bguild_id\x18\x01 \x01(\tR\aguildId\x12&\n" +
 	"\x0ffrom_channel_id\x18\x02 \x01(\tR\rfromChannelId\x12\"\n" +
 	"\rto_channel_id\x18\x03 \x01(\tR\vtoChannelId\x12\x19\n" +
-	"\buser_ids\x18\x04 \x03(\tR\auserIds\";\n" +
+	"\buser_ids\x18\x04 \x03(\tR\auserIds\"Q\n" +
 	"\x13MoveMembersResponse\x12$\n" +
-	"\x0emoved_user_ids\x18\x01 \x03(\tR\fmovedUserIds\"e\n" +
+	"\x0emoved_user_ids\x18\x01 \x03(\tR\fmovedUserIds\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"e\n" +
 	"\x13HoldChannelsRequest\x12\x19\n" +
 	"\bguild_id\x18\x01 \x01(\tR\aguildId\x123\n" +
 	"\bchannels\x18\x02 \x03(\v2\x17.janitor.v1.HeldChannelR\bchannels\"K\n" +

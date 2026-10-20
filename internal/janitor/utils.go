@@ -1,30 +1,50 @@
 package janitor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/robert-mccausland/janitor-bot/internal/discord"
 )
 
-// voiceMu stops two jobs using the janitor's voice connection at once, as it
-// can only be in one channel per guild.
-var voiceMu sync.Mutex
+// voiceSlot stops two jobs using the janitor's voice connection at once, as it
+// can only be in one channel per guild. Take it with acquireVoice.
+var voiceSlot = make(chan struct{}, 1)
+
+// acquireVoice waits for the voice connection to be free, or for ctx to end.
+// Call releaseVoice when done with it.
+func acquireVoice(ctx context.Context) error {
+	select {
+	case voiceSlot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func releaseVoice() { <-voiceSlot }
 
 func moveUsers(c *discord.Client, fromChannel *discord.Channel, toChannel *discord.Channel) error {
-	_, err := moveSomeUsers(c, fromChannel, toChannel, nil)
+	_, err := moveSomeUsers(context.Background(), c, fromChannel, toChannel, nil, nil)
 	return err
 }
 
 // moveSomeUsers moves the users in only (or everyone, if only is nil) from
 // fromChannel to toChannel, or disconnects them if toChannel is nil. It returns
-// the IDs of the users it moved.
-func moveSomeUsers(c *discord.Client, fromChannel *discord.Channel, toChannel *discord.Channel, only map[string]bool) ([]string, error) {
-	voiceMu.Lock()
-	defer voiceMu.Unlock()
+// the IDs of the users it moved. If skip is set, it's checked once the voice
+// connection is free, and nobody is moved if it returns true.
+func moveSomeUsers(ctx context.Context, c *discord.Client, fromChannel *discord.Channel, toChannel *discord.Channel, only map[string]bool, skip func() bool) ([]string, error) {
+	if err := acquireVoice(ctx); err != nil {
+		return nil, err
+	}
+	defer releaseVoice()
+
+	if skip != nil && skip() {
+		return nil, nil
+	}
 
 	guild := c.Guild(fromChannel.GuildID)
 	if guild == nil {
@@ -55,7 +75,7 @@ func moveSomeUsers(c *discord.Client, fromChannel *discord.Channel, toChannel *d
 	defer func() {
 		err = vc.Leave()
 		if err != nil {
-			logger.Error("Failed to disconnect from voice: %v", slog.Any("err", err))
+			logger.Error(fmt.Sprintf("Failed to disconnect from voice: %v", err), slog.Any("err", err))
 		}
 	}()
 

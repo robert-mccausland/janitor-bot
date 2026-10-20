@@ -44,10 +44,21 @@ func (j *Janitor) serveAPI(addr string) error {
 }
 
 func (s *server) Identity(context.Context, *janitorv1.IdentityRequest) (*janitorv1.IdentityResponse, error) {
-	return &janitorv1.IdentityResponse{UserId: s.j.client.User().ID}, nil
+	user := s.j.client.User()
+	if user == nil {
+		return nil, status.Error(codes.Unavailable, "the janitor isn't connected to Discord")
+	}
+	return &janitorv1.IdentityResponse{UserId: user.ID}, nil
 }
 
-func (s *server) MoveMembers(_ context.Context, req *janitorv1.MoveMembersRequest) (*janitorv1.MoveMembersResponse, error) {
+func (s *server) MoveMembers(ctx context.Context, req *janitorv1.MoveMembersRequest) (*janitorv1.MoveMembersResponse, error) {
+	if len(req.GetUserIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_ids is required")
+	}
+	if req.GetFromChannelId() == req.GetToChannelId() {
+		return nil, status.Error(codes.InvalidArgument, "from and to are the same channel")
+	}
+
 	from, err := s.voiceChannel(req.GetGuildId(), req.GetFromChannelId())
 	if err != nil {
 		return nil, err
@@ -60,26 +71,29 @@ func (s *server) MoveMembers(_ context.Context, req *janitorv1.MoveMembersReques
 		}
 	}
 
-	var only map[string]bool
-	if len(req.GetUserIds()) > 0 {
-		only = map[string]bool{}
-		for _, id := range req.GetUserIds() {
-			only[id] = true
-		}
+	only := map[string]bool{}
+	for _, id := range req.GetUserIds() {
+		only[id] = true
 	}
 
 	logger.Info("Moving members on request", slog.String("guild_id", req.GetGuildId()),
 		slog.String("from_channel_id", from.ID), slog.String("to_channel_id", req.GetToChannelId()), slog.Int("requested", len(req.GetUserIds())))
-	moved, err := moveSomeUsers(s.j.client, from, to, only)
+	moved, err := moveSomeUsers(ctx, s.j.client, from, to, only, nil)
 	if err != nil {
+		if len(moved) == 0 && ctx.Err() != nil {
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
 		logger.Error(fmt.Sprintf("error moving members on request: %v", err), slog.Any("err", err), slog.Int("moved", len(moved)))
-		return nil, status.Errorf(codes.Internal, "moved %d before failing: %v", len(moved), err)
+		return &janitorv1.MoveMembersResponse{MovedUserIds: moved, Error: err.Error()}, nil
 	}
 
 	return &janitorv1.MoveMembersResponse{MovedUserIds: moved}, nil
 }
 
 func (s *server) HoldChannels(_ context.Context, req *janitorv1.HoldChannelsRequest) (*janitorv1.HoldChannelsResponse, error) {
+	if req.GetGuildId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "guild_id is required")
+	}
 	if s.j.client.Guild(req.GetGuildId()) == nil {
 		return nil, status.Errorf(codes.NotFound, "the janitor isn't in guild %s", req.GetGuildId())
 	}

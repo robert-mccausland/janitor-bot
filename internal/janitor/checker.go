@@ -72,12 +72,14 @@ func checkChannels(c *discord.Client, office *discord.Channel, holidays *interna
 			continue
 		}
 
-		// Meeting rooms in use are held by hr-bot; leave the meeting alone.
-		if holds.held(office.GuildID, channel.ID, time.Now()) {
+		// Meeting rooms in use are held by hr-bot; leave the meeting alone. Check
+		// again once the voice connection is free, as a hold may arrive meanwhile.
+		isHeld := func() bool { return holds.held(office.GuildID, channel.ID, time.Now()) }
+		if isHeld() {
 			continue
 		}
 
-		err = moveUsers(c, &channel, office)
+		_, err = moveSomeUsers(ctx, c, &channel, office, nil, isHeld)
 		if err != nil {
 			return fmt.Errorf("failed to move users from %s to office: %v", channel.ID, err)
 		}

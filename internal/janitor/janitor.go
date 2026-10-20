@@ -105,8 +105,10 @@ func (j *Janitor) Janate() error {
 	go j.runChannelSweepLoop()
 	j.registerChannelChecker()
 
-	if err := j.serveAPI(j.grpcAddr); err != nil {
-		return err
+	if j.grpcAddr != "" {
+		if err := j.serveAPI(j.grpcAddr); err != nil {
+			return err
+		}
 	}
 
 	officeCron.Start()
