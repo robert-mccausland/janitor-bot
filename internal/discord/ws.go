@@ -454,11 +454,12 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			return fmt.Errorf("unable to unmarshal voice state update message: %w", err)
 		}
 
-		// Only the bot's own voice state completes a join; other people's arrive
-		// too, e.g. as the janitor moves them.
-		if d.user != nil && voiceState.UserID == d.user.ID {
+		// Only the bot's own voice state in the channel being joined completes a
+		// join: not other people's (e.g. as the janitor moves them), nor a late
+		// one from leaving or a previous channel.
+		if d.user != nil && voiceState.UserID == d.user.ID && voiceState.ChannelID != nil {
 			d.voiceMu.Lock()
-			if session, ok := d.voiceJoinSessions[voiceState.GuildID]; ok {
+			if session, ok := d.voiceJoinSessions[voiceState.GuildID]; ok && session.channelID == *voiceState.ChannelID {
 				select {
 				case session.sessionIdCh <- voiceState.SessionID:
 				default:

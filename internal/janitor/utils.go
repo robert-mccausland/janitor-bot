@@ -42,6 +42,10 @@ func moveSomeUsers(ctx context.Context, c *discord.Client, fromChannel *discord.
 	}
 	defer releaseVoice()
 
+	// The caller may have given up just as the voice connection came free.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if skip != nil && skip() {
 		return nil, nil
 	}

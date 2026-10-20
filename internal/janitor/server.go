@@ -55,6 +55,9 @@ func (s *server) MoveMembers(ctx context.Context, req *janitorv1.MoveMembersRequ
 	if len(req.GetUserIds()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "user_ids is required")
 	}
+	if req.GetGuildId() == "" || req.GetFromChannelId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "guild and from channel IDs are required")
+	}
 	if req.GetFromChannelId() == req.GetToChannelId() {
 		return nil, status.Error(codes.InvalidArgument, "from and to are the same channel")
 	}

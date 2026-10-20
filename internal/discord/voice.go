@@ -5,15 +5,12 @@ import (
 	"time"
 )
 
+// JoinVoiceChannel joins (or switches to) a voice channel. It returns once the
+// bot's own voice state shows it in that channel; the janitor never sends
+// audio, so it doesn't wait for a voice server, which Discord needn't send
+// when switching channels.
 func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute bool, selfDeaf bool) (*DiscordVoiceClient, error) {
-	return d.joinVoiceChannel(guildID, channelID, selfMute, selfDeaf, true)
-}
-
-// joinVoiceChannel joins a voice channel. A fresh join waits for both the
-// bot's voice state and the voice server; switching channels only waits for
-// the voice state, as Discord needn't send a new voice server.
-func (d *Client) joinVoiceChannel(guildID string, channelID string, selfMute bool, selfDeaf bool, needServer bool) (*DiscordVoiceClient, error) {
-	js, err := d.createJoinSession(guildID)
+	js, err := d.createJoinSession(guildID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -41,15 +38,13 @@ func (d *Client) joinVoiceChannel(guildID string, channelID string, selfMute boo
 
 	var sessionID string
 	var voiceServer voiceServerObject
-	gotServer := !needServer
 	timeout := time.After(d.options.VoiceJoinTimeout)
-	for sessionID == "" || !gotServer {
+	for sessionID == "" {
 		select {
 		case sID := <-js.sessionIdCh:
 			sessionID = sID
 		case vs := <-js.voiceServerCh:
 			voiceServer = vs
-			gotServer = true
 		case <-timeout:
 			return nil, fmt.Errorf("voice connection timed out waiting %.2f seconds gateway events", d.options.VoiceJoinTimeout.Seconds())
 		case <-d.ctx.Done():
@@ -68,7 +63,7 @@ func (d *Client) joinVoiceChannel(guildID string, channelID string, selfMute boo
 }
 
 func (vc *DiscordVoiceClient) ChangeChannel(channelID string, selfMute bool, selfDeaf bool) error {
-	newVC, err := vc.d.joinVoiceChannel(vc.guildID, channelID, selfMute, selfDeaf, false)
+	newVC, err := vc.d.JoinVoiceChannel(vc.guildID, channelID, selfMute, selfDeaf)
 	if err != nil {
 		return fmt.Errorf("unable to join voice channel: %v", err)
 	}
@@ -82,11 +77,12 @@ func (vc *DiscordVoiceClient) ChangeChannel(channelID string, selfMute bool, sel
 }
 
 type voiceUpdateSession struct {
+	channelID     string // the channel being joined
 	sessionIdCh   chan string
 	voiceServerCh chan voiceServerObject
 }
 
-func (d *Client) createJoinSession(guildID string) (*voiceUpdateSession, error) {
+func (d *Client) createJoinSession(guildID, channelID string) (*voiceUpdateSession, error) {
 	d.voiceMu.Lock()
 	defer d.voiceMu.Unlock()
 
@@ -95,6 +91,7 @@ func (d *Client) createJoinSession(guildID string) (*voiceUpdateSession, error) 
 	}
 
 	joinSession := voiceUpdateSession{
+		channelID:     channelID,
 		sessionIdCh:   make(chan string, 1),
 		voiceServerCh: make(chan voiceServerObject, 1),
 	}
