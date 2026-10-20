@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// The janitor's API, for other bots on the same Docker network (hr-bot books
+// meeting rooms and asks the janitor to move people in and out of them).
+//
+// Regenerate the Go code from the api directory with:
+//
+//	protoc --go_out=. --go_opt=paths=source_relative \
+//	  --go-grpc_out=. --go-grpc_opt=paths=source_relative janitorv1/janitor.proto
+package janitor.v1;
+
+option go_package = "github.com/robert-mccausland/janitor-bot/api/janitorv1";
+
+service Janitor {
+  // Identity returns the janitor's Discord user, so callers can let it into
+  // channels they lock.
+  rpc Identity(IdentityRequest) returns (IdentityResponse);
+
+  // MoveMembers moves people out of a voice channel the way the janitor does
+  // when it closes the office: it joins the channel, plays its arrival sound,
+  // moves them, then follows them and plays its departure sound.
+  rpc MoveMembers(MoveMembersRequest) returns (MoveMembersResponse);
+
+  // HoldChannels replaces the guild's held channels: voice channels the
+  // janitor leaves alone when it rounds people up into the office. Holds are
+  // kept in memory, so callers should resend them periodically.
+  rpc HoldChannels(HoldChannelsRequest) returns (HoldChannelsResponse);
+}
+
+message IdentityRequest {}
+
+message IdentityResponse {
+  string user_id = 1;
+}
+
+message MoveMembersRequest {
+  string guild_id = 1;
+  string from_channel_id = 2;
+  // Where to move them; empty disconnects them from voice instead.
+  string to_channel_id = 3;
+  // Who to move (at least one). Only those in from_channel_id are moved.
+  repeated string user_ids = 4;
+}
+
+message MoveMembersResponse {
+  // Who was moved, even if it then failed part-way.
+  repeated string moved_user_ids = 1;
+  // Why it stopped part-way; empty if everyone there was moved.
+  string error = 2;
+}
+
+message HoldChannelsRequest {
+  string guild_id = 1;
+  repeated HeldChannel channels = 2;
+}
+
+message HeldChannel {
+  string channel_id = 1;
+  // When the hold lapses, in unix seconds.
+  int64 until_unix = 2;
+}
+
+message HoldChannelsResponse {}

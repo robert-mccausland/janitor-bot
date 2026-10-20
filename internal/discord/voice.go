@@ -5,8 +5,12 @@ import (
 	"time"
 )
 
+// JoinVoiceChannel joins (or switches to) a voice channel. It returns once the
+// bot's own voice state shows it in that channel; the janitor never sends
+// audio, so it doesn't wait for a voice server, which Discord needn't send
+// when switching channels.
 func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute bool, selfDeaf bool) (*DiscordVoiceClient, error) {
-	js, err := d.createJoinSession(guildID)
+	js, err := d.createJoinSession(guildID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +39,7 @@ func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute boo
 	var sessionID string
 	var voiceServer voiceServerObject
 	timeout := time.After(d.options.VoiceJoinTimeout)
-	for range 2 {
+	for sessionID == "" {
 		select {
 		case sID := <-js.sessionIdCh:
 			sessionID = sID
@@ -50,6 +54,7 @@ func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute boo
 
 	vc := DiscordVoiceClient{
 		d:           d,
+		guildID:     guildID,
 		sessionID:   sessionID,
 		voiceServer: voiceServer,
 	}
@@ -58,23 +63,26 @@ func (d *Client) JoinVoiceChannel(guildID string, channelID string, selfMute boo
 }
 
 func (vc *DiscordVoiceClient) ChangeChannel(channelID string, selfMute bool, selfDeaf bool) error {
-	newVC, err := vc.d.JoinVoiceChannel(vc.voiceServer.GuildID, channelID, selfMute, selfDeaf)
+	newVC, err := vc.d.JoinVoiceChannel(vc.guildID, channelID, selfMute, selfDeaf)
 	if err != nil {
 		return fmt.Errorf("unable to join voice channel: %v", err)
 	}
 
 	vc.sessionID = newVC.sessionID
-	vc.voiceServer = newVC.voiceServer
+	if newVC.voiceServer.GuildID != "" {
+		vc.voiceServer = newVC.voiceServer
+	}
 
 	return nil
 }
 
 type voiceUpdateSession struct {
+	channelID     string // the channel being joined
 	sessionIdCh   chan string
 	voiceServerCh chan voiceServerObject
 }
 
-func (d *Client) createJoinSession(guildID string) (*voiceUpdateSession, error) {
+func (d *Client) createJoinSession(guildID, channelID string) (*voiceUpdateSession, error) {
 	d.voiceMu.Lock()
 	defer d.voiceMu.Unlock()
 
@@ -83,6 +91,7 @@ func (d *Client) createJoinSession(guildID string) (*voiceUpdateSession, error) 
 	}
 
 	joinSession := voiceUpdateSession{
+		channelID:     channelID,
 		sessionIdCh:   make(chan string, 1),
 		voiceServerCh: make(chan voiceServerObject, 1),
 	}
@@ -92,6 +101,7 @@ func (d *Client) createJoinSession(guildID string) (*voiceUpdateSession, error) 
 }
 
 type DiscordVoiceClient struct {
+	guildID     string
 	voiceServer voiceServerObject
 	sessionID   string
 
@@ -100,7 +110,7 @@ type DiscordVoiceClient struct {
 
 func (vc *DiscordVoiceClient) Leave() error {
 	payload, err := createPayload(4, voiceStateUpdateMessage{
-		GuildID:   vc.voiceServer.GuildID,
+		GuildID:   vc.guildID,
 		ChannelID: nil,
 		SelfMute:  false,
 		SelfDeaf:  false,

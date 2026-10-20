@@ -454,11 +454,19 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 			return fmt.Errorf("unable to unmarshal voice state update message: %w", err)
 		}
 
-		d.voiceMu.Lock()
-		if session, ok := d.voiceJoinSessions[voiceState.GuildID]; ok {
-			session.sessionIdCh <- voiceState.SessionID
+		// Only the bot's own voice state in the channel being joined completes a
+		// join: not other people's (e.g. as the janitor moves them), nor a late
+		// one from leaving or a previous channel.
+		if d.user != nil && voiceState.UserID == d.user.ID && voiceState.ChannelID != nil {
+			d.voiceMu.Lock()
+			if session, ok := d.voiceJoinSessions[voiceState.GuildID]; ok && session.channelID == *voiceState.ChannelID {
+				select {
+				case session.sessionIdCh <- voiceState.SessionID:
+				default:
+				}
+			}
+			d.voiceMu.Unlock()
 		}
-		d.voiceMu.Unlock()
 
 		d.mu.Lock()
 		guild, ok := d.guilds[voiceState.GuildID]
@@ -482,7 +490,10 @@ func (d *Client) handleEvent(payload gatewayPayload) error {
 
 		d.voiceMu.Lock()
 		if session, ok := d.voiceJoinSessions[voiceServer.GuildID]; ok {
-			session.voiceServerCh <- voiceServer
+			select {
+			case session.voiceServerCh <- voiceServer:
+			default:
+			}
 		}
 		d.voiceMu.Unlock()
 

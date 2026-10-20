@@ -100,19 +100,19 @@ type GuildMemberUpdate struct {
 
 func (d *Client) ModifyGuildMember(guildID string, userID string, update GuildMemberUpdate) error {
 	body := struct {
-		Nick                       *string    `json:"nick,omitempty"`
-		Roles                      *[]string  `json:"roles,omitempty"`
-		Mute                       *bool      `json:"mute,omitempty"`
-		Deaf                       *bool      `json:"deaf,omitempty"`
-		ChannelID                  *string    `json:"channel_id,omitempty"`
-		CommunicationDisabledUntil *time.Time `json:"communication_disabled_until,omitempty"`
-		Flags                      *int       `json:"flags,omitempty"`
+		Nick                       *string     `json:"nick,omitempty"`
+		Roles                      *[]string   `json:"roles,omitempty"`
+		Mute                       *bool       `json:"mute,omitempty"`
+		Deaf                       *bool       `json:"deaf,omitempty"`
+		ChannelID                  *nullableID `json:"channel_id,omitempty"`
+		CommunicationDisabledUntil *time.Time  `json:"communication_disabled_until,omitempty"`
+		Flags                      *int        `json:"flags,omitempty"`
 	}{
 		Nick:                       update.Nick,
 		Roles:                      update.Roles,
 		Mute:                       update.Mute,
 		Deaf:                       update.Deaf,
-		ChannelID:                  update.ChannelID,
+		ChannelID:                  (*nullableID)(update.ChannelID),
 		CommunicationDisabledUntil: update.CommunicationDisabledUntil,
 		Flags:                      update.Flags,
 	}
@@ -123,6 +123,16 @@ func (d *Client) ModifyGuildMember(guildID string, userID string, update GuildMe
 	}
 
 	return nil
+}
+
+// nullableID is an ID that marshals to null when empty.
+type nullableID string
+
+func (id nullableID) MarshalJSON() ([]byte, error) {
+	if id == "" {
+		return []byte("null"), nil
+	}
+	return json.Marshal(string(id))
 }
 
 type SoundboardSound struct {

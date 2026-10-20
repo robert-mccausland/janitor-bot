@@ -20,7 +20,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        python-version: '1.25'
+        go-version-file: go.mod
         cache: true
           
     - name: Verify dependencies
@@ -33,3 +33,10 @@ jobs:
     
     - name: Run build
       run: go build -v ./...
+
+    - name: Run tests
+      run: go test -race ./...
+
+    - name: Build and vet the API module
+      working-directory: api
+      run: go vet ./...

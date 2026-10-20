@@ -18,6 +18,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://grafana-alloy:4317"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       DB_PATH: "/var/lib/janitor-bot/data/janitor-bot.db"
+      # gRPC API for other bots on shared-network (hr-bot calls janitor-bot:50051).
+      # Not published on the host.
+      GRPC_ADDR: ":50051"
 
     volumes:
       - janitor-bot-data:/var/lib/janitor-bot/data

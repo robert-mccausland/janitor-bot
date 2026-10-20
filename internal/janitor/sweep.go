@@ -1,6 +1,7 @@
 package janitor
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -69,6 +70,11 @@ func sweepChannel(c *discord.Client, defaultChannel *discord.Channel) error {
 			voiceChannels = append(voiceChannels, id)
 		}
 	}
+
+	if err := acquireVoice(context.Background()); err != nil {
+		return err
+	}
+	defer releaseVoice()
 
 	index := rand.Intn(len(voiceChannels))
 	channel, err := c.GetChannel(voiceChannels[index])

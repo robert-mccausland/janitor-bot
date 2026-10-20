@@ -18,7 +18,7 @@ func (j *Janitor) registerChannelChecker() {
 		if mu.TryLock() {
 			go func() {
 				defer mu.Unlock()
-				err := checkChannels(j.client, j.office, j.holidays, j.timezone, j.ctx)
+				err := checkChannels(j.client, j.office, j.holidays, j.holds, j.timezone, j.ctx)
 				if err != nil {
 					logger.Error(fmt.Sprintf("error while checking channels: %v", err), slog.Any("err", err))
 				}
@@ -28,7 +28,7 @@ func (j *Janitor) registerChannelChecker() {
 	})
 }
 
-func checkChannels(c *discord.Client, office *discord.Channel, holidays *internal.Holidays, timezone *time.Location, ctx context.Context) error {
+func checkChannels(c *discord.Client, office *discord.Channel, holidays *internal.Holidays, holds *channelHolds, timezone *time.Location, ctx context.Context) error {
 	logger.Info("Checking channels to see if current users are in the correct place")
 
 	now := time.Now().In(timezone)
@@ -72,7 +72,14 @@ func checkChannels(c *discord.Client, office *discord.Channel, holidays *interna
 			continue
 		}
 
-		err = moveUsers(c, &channel, office)
+		// Meeting rooms in use are held by hr-bot; leave the meeting alone. Check
+		// again once the voice connection is free, as a hold may arrive meanwhile.
+		isHeld := func() bool { return holds.held(office.GuildID, channel.ID, time.Now()) }
+		if isHeld() {
+			continue
+		}
+
+		_, err = moveSomeUsers(ctx, c, &channel, office, nil, isHeld)
 		if err != nil {
 			return fmt.Errorf("failed to move users from %s to office: %v", channel.ID, err)
 		}
