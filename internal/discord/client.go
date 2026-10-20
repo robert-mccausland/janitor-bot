@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -215,6 +217,8 @@ func (d *Client) Guilds() []Guild {
 	guilds := make([]Guild, 0, len(d.guilds))
 
 	for _, g := range d.guilds {
+		g.Channels = slices.Clone(g.Channels)
+		g.VoiceStates = maps.Clone(g.VoiceStates)
 		guilds = append(guilds, g)
 	}
 
@@ -233,6 +237,10 @@ func (d *Client) Guild(guildID string) *Guild {
 
 	guild, ok := d.guilds[guildID]
 	if ok {
+		// The maps and slices are shared with the gateway reader, which updates
+		// them as events arrive, so hand out copies.
+		guild.Channels = slices.Clone(guild.Channels)
+		guild.VoiceStates = maps.Clone(guild.VoiceStates)
 		return &guild
 	}
 	return nil
