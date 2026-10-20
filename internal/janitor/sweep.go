@@ -70,6 +70,9 @@ func sweepChannel(c *discord.Client, defaultChannel *discord.Channel) error {
 		}
 	}
 
+	voiceMu.Lock()
+	defer voiceMu.Unlock()
+
 	index := rand.Intn(len(voiceChannels))
 	channel, err := c.GetChannel(voiceChannels[index])
 	if err != nil {

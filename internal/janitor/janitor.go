@@ -24,6 +24,7 @@ type Janitor struct {
 	defaultChannel *discord.Channel
 	holidays       *internal.Holidays
 	repo           *internal.Repository
+	holds          *channelHolds
 	ctx            context.Context
 
 	officeChannelID      string
@@ -33,6 +34,7 @@ type Janitor struct {
 	arsenalChampionsDate time.Time
 	planksID             string
 	footballChannelID    string
+	grpcAddr             string
 }
 
 func NewJanitor(ctx context.Context, config internal.Config) (*Janitor, error) {
@@ -72,6 +74,7 @@ func NewJanitor(ctx context.Context, config internal.Config) (*Janitor, error) {
 		defaultChannel:       defaultChannel,
 		holidays:             holidays,
 		repo:                 repo,
+		holds:                &channelHolds{},
 		ctx:                  ctx,
 		officeChannelID:      config.OfficeChannelID,
 		defaultChannelID:     config.DefaultChannelID,
@@ -80,6 +83,7 @@ func NewJanitor(ctx context.Context, config internal.Config) (*Janitor, error) {
 		arsenalChampionsDate: config.ArsenalChampionsDate,
 		planksID:             config.PlanksID,
 		footballChannelID:    config.FootballChannelID,
+		grpcAddr:             config.GRPCAddr,
 	}, nil
 }
 
@@ -100,6 +104,10 @@ func (j *Janitor) Janate() error {
 	go j.runPlanksReckoningLoop()
 	go j.runChannelSweepLoop()
 	j.registerChannelChecker()
+
+	if err := j.serveAPI(j.grpcAddr); err != nil {
+		return err
+	}
 
 	officeCron.Start()
 

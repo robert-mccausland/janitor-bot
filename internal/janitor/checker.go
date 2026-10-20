@@ -18,7 +18,7 @@ func (j *Janitor) registerChannelChecker() {
 		if mu.TryLock() {
 			go func() {
 				defer mu.Unlock()
-				err := checkChannels(j.client, j.office, j.holidays, j.timezone, j.ctx)
+				err := checkChannels(j.client, j.office, j.holidays, j.holds, j.timezone, j.ctx)
 				if err != nil {
 					logger.Error(fmt.Sprintf("error while checking channels: %v", err), slog.Any("err", err))
 				}
@@ -28,7 +28,7 @@ func (j *Janitor) registerChannelChecker() {
 	})
 }
 
-func checkChannels(c *discord.Client, office *discord.Channel, holidays *internal.Holidays, timezone *time.Location, ctx context.Context) error {
+func checkChannels(c *discord.Client, office *discord.Channel, holidays *internal.Holidays, holds *channelHolds, timezone *time.Location, ctx context.Context) error {
 	logger.Info("Checking channels to see if current users are in the correct place")
 
 	now := time.Now().In(timezone)
@@ -69,6 +69,11 @@ func checkChannels(c *discord.Client, office *discord.Channel, holidays *interna
 		}
 
 		if channel.ID == office.ID {
+			continue
+		}
+
+		// Meeting rooms in use are held by hr-bot; leave the meeting alone.
+		if holds.held(office.GuildID, channel.ID, time.Now()) {
 			continue
 		}
 
