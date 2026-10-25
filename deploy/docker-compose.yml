@@ -3,7 +3,15 @@ version: '3.8'
 services:
   janitor-bot:
     image: ghcr.io/robert-mccausland/janitor-bot:${VERSION}
-    restart: unless-stopped 
+    restart: unless-stopped
+    # Memory cap (ZOO-52): a leak gets this container OOM-killed and restarted
+    # instead of starving the whole VM (ZOO-49). The swap cap matches, so it
+    # can't spill into swap either. Override with the MEM_LIMIT GitHub
+    # environment variable, which the Release workflow writes to .env.
+    # docker-compose 1.27.4 honours mem_limit in a version 3.x file
+    # (deploy.resources can't cap swap).
+    mem_limit: ${MEM_LIMIT:-128m}
+    memswap_limit: ${MEM_LIMIT:-128m}
     
     environment:
       ENVIRONMENT: ${ENVIRONMENT}

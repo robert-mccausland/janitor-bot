@@ -88,6 +88,7 @@ jobs:
           echo "VERSION=$version" > ./deploy/.env          
           echo "ENVIRONMENT=$environment" >> ./deploy/.env
           echo "TOKEN=${{ secrets.DISCORD_TOKEN }}" >> ./deploy/.env
+          echo "MEM_LIMIT=${{ vars.MEM_LIMIT }}" >> ./deploy/.env
 
           gcloud compute ssh apps@${{ env.GCE_INSTANCE_NAME }} \
             --zone=${{ env.GCE_ZONE }} \
