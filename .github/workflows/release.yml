@@ -96,12 +96,12 @@ jobs:
               esac
               [ "$mib" -ge 32 ] || errors+=("MEM_LIMIT of at least 32m (got $MEM_LIMIT)")
             else
-              errors+=("valid MEM_LIMIT, e.g. 256m (got $MEM_LIMIT)")
+              errors+=("valid MEM_LIMIT, e.g. 64m (got $MEM_LIMIT)")
             fi
           fi
           # An invalid GOMEMLIMIT makes the Go runtime exit at startup.
           [ -z "$GOMEMLIMIT" ] || [ "$GOMEMLIMIT" = off ] || [[ "$GOMEMLIMIT" =~ ^[0-9]+(B|KiB|MiB|GiB)?$ ]] \
-            || errors+=("valid GOMEMLIMIT, e.g. 100MiB (got $GOMEMLIMIT)")
+            || errors+=("valid GOMEMLIMIT, e.g. 50MiB (got $GOMEMLIMIT)")
           if [ ${#errors[@]} -gt 0 ]; then
             printf '::error::Invalid deploy settings: %s\n' "$(IFS=,; echo "${errors[*]}")"
             exit 1

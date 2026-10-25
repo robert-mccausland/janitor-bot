@@ -10,8 +10,8 @@ services:
     # environment variable, which the Release workflow writes to .env.
     # docker-compose 1.27.4 honours mem_limit in a version 3.x file
     # (deploy.resources can't cap swap).
-    mem_limit: ${MEM_LIMIT:-128m}
-    memswap_limit: ${MEM_LIMIT:-128m}
+    mem_limit: ${MEM_LIMIT:-64m}
+    memswap_limit: ${MEM_LIMIT:-64m}
     
     environment:
       ENVIRONMENT: ${ENVIRONMENT}
@@ -19,7 +19,7 @@ services:
       VERSION: ${VERSION}
       # Soft limit for Go's garbage collector, about 80% of mem_limit, so the GC
       # works harder before the kernel OOM-kills. Keep it near 80% of MEM_LIMIT.
-      GOMEMLIMIT: ${GOMEMLIMIT:-100MiB}
+      GOMEMLIMIT: ${GOMEMLIMIT:-50MiB}
       OFFICE_CHANNEL_ID: "1443583282443845834"
       DEFAULT_CHANNEL_ID: "1291056400289632369"
       ARSENAL_CHAMPIONS_DATE: "2026-05-19"
