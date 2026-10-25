@@ -80,6 +80,62 @@ jobs:
           project_id: ${{ env.PROJECT_ID }}
           service_account: ${{ env.SERVICE_ACCOUNT }}
 
+      - name: Check deploy settings
+        env:
+          MEM_LIMIT: ${{ vars.MEM_LIMIT }}
+          GOMEMLIMIT: ${{ vars.GOMEMLIMIT }}
+        run: |
+          errors=()
+          # Sizes in bytes; the defaults match deploy/docker-compose.yml.
+          max=9223372036854775807
+          mem_bytes=$((64 * 1048576))
+          if [ -n "$MEM_LIMIT" ]; then
+            # docker-compose only parses MEM_LIMIT during "up", after deploy.sh has
+            # taken the old container down, so a bad value would leave the bot down.
+            if [[ "$MEM_LIMIT" =~ ^([0-9]{1,12})([bkmgBKMG])$ ]]; then
+              n=$((10#${BASH_REMATCH[1]}))
+              case "${BASH_REMATCH[2],,}" in
+                b) mult=1 ;; k) mult=1024 ;; m) mult=1048576 ;; g) mult=1073741824 ;;
+              esac
+              if [ "$n" -le $((max / mult)) ] && [ $((n * mult)) -ge $((32 * 1048576)) ]; then
+                mem_bytes=$((n * mult))
+              else
+                errors+=("MEM_LIMIT from 32m up to a 64-bit byte count (got $MEM_LIMIT)")
+                mem_bytes=0
+              fi
+            else
+              errors+=("valid MEM_LIMIT, e.g. 64m (got $MEM_LIMIT)")
+              mem_bytes=0
+            fi
+          fi
+          # An invalid GOMEMLIMIT makes the Go runtime exit at startup.
+          gomem="${GOMEMLIMIT:-50MiB}"
+          gomem_bytes=0
+          if [ "$gomem" != off ]; then
+            if [[ "$gomem" =~ ^([0-9]{1,15})(B|KiB|MiB|GiB)?$ ]]; then
+              n=$((10#${BASH_REMATCH[1]}))
+              case "${BASH_REMATCH[2]}" in
+                KiB) mult=1024 ;; MiB) mult=1048576 ;; GiB) mult=1073741824 ;; *) mult=1 ;;
+              esac
+              if [ "$n" -le $((max / mult)) ]; then
+                gomem_bytes=$((n * mult))
+              else
+                errors+=("GOMEMLIMIT small enough to fit in 64 bits (got $GOMEMLIMIT)")
+              fi
+            else
+              errors+=("valid GOMEMLIMIT, e.g. 50MiB (got $GOMEMLIMIT)")
+            fi
+          fi
+          # Not fatal, but the GC soft limit does nothing useful at or above the cap.
+          if [ "$mem_bytes" -gt 0 ] && [ "$gomem_bytes" -ge "$mem_bytes" ]; then
+            printf '::warning::GOMEMLIMIT (%s) is at or above MEM_LIMIT (%s). Set GOMEMLIMIT to about 80%% of MEM_LIMIT.\n' \
+              "$gomem" "${MEM_LIMIT:-64m}"
+          fi
+          if [ ${#errors[@]} -gt 0 ]; then
+            printf '::error::Invalid deploy settings: %s\n' "$(IFS=,; echo "${errors[*]}")"
+            exit 1
+          fi
+
       - name: Update docker-compose manifest
         run: |
           version=${{ fromJson(needs.build.outputs.metaJson).labels['org.opencontainers.image.version'] }}
@@ -88,6 +144,8 @@ jobs:
           echo "VERSION=$version" > ./deploy/.env          
           echo "ENVIRONMENT=$environment" >> ./deploy/.env
           echo "TOKEN=${{ secrets.DISCORD_TOKEN }}" >> ./deploy/.env
+          echo "MEM_LIMIT=${{ vars.MEM_LIMIT }}" >> ./deploy/.env
+          echo "GOMEMLIMIT=${{ vars.GOMEMLIMIT }}" >> ./deploy/.env
 
           gcloud compute ssh apps@${{ env.GCE_INSTANCE_NAME }} \
             --zone=${{ env.GCE_ZONE }} \
